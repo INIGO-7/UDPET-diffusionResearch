@@ -93,6 +93,12 @@ def load_volume(path: str) -> np.ndarray:
     return data
 
 
+@lru_cache(maxsize=20)
+def load_clim(path: str) -> tuple[float, float]:
+    lo, hi = np.nanpercentile(load_volume(path), [1, 99])
+    return float(lo), float(hi)
+
+
 # ---------------------------------------------------------------------------
 # Visualización
 # ---------------------------------------------------------------------------
@@ -118,8 +124,8 @@ def show_comparison(path_full: str, path_20: str, pairs: list[tuple[str, str]] |
     nx, ny, nz = vol_full.shape
     init = [nx // 2, ny // 2, nz // 2]
 
-    clim_full = np.nanpercentile(vol_full, [1, 99])
-    clim_20   = np.nanpercentile(vol_20,   [1, 99])
+    clim_full = load_clim(path_full)
+    clim_20   = load_clim(path_20)
 
     fig, axes = plt.subplots(2, 3, figsize=(13, 8))
     title_obj = fig.suptitle("", fontsize=9)
@@ -188,8 +194,8 @@ def show_comparison(path_full: str, path_20: str, pairs: list[tuple[str, str]] |
             pf, p20 = pairs[idx]
             v_full = load_volume(pf)
             v_20   = load_volume(p20)
-            cf = np.nanpercentile(v_full, [1, 99])
-            c20 = np.nanpercentile(v_20,  [1, 99])
+            cf = load_clim(pf)
+            c20 = load_clim(p20)
             nxi, nyi, nzi = v_full.shape
             # Reinicia sliders al corte central del nuevo volumen
             s_x.valmax = nxi - 1; s_x.set_val(nxi // 2)
