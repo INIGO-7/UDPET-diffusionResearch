@@ -17,6 +17,7 @@ import os
 import sys
 import glob
 import numpy as np
+from functools import lru_cache
 import nibabel as nib
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, Button
@@ -79,6 +80,7 @@ def resolve_paths(args: list[str]) -> tuple[str, str]:
 # Carga
 # ---------------------------------------------------------------------------
 
+@lru_cache(maxsize=20)
 def load_volume(path: str) -> np.ndarray:
     img  = nib.load(path)
     data = np.squeeze(img.get_fdata())
