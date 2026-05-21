@@ -1,16 +1,26 @@
-from datasets import load_dataset, load_from_disk
-import os
 import torch
+from diffusers.optimization import get_cosine_schedule_with_warmup
 
 from config import config
-from preprocess import transform_ds
+from data import build_dataloader
+from model import build_model, build_noise_scheduler
+from train import train_loop
 
-if os.path.exists(config.dataset_path):
-    dataset = load_from_disk(config.dataset_path)
-else:
-    dataset = load_dataset(config.dataset_name, split="train")
-    dataset.save_to_disk(config.dataset_path)
 
-transformed_ds = transform_ds(dataset)
+def main():
+    train_dataloader = build_dataloader()
+    model = build_model()
+    noise_scheduler = build_noise_scheduler()
 
-train_dataloader = torch.utils.data.DataLoader(dataset, batch_size=config.train_batch_size, shuffle=True)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate)
+    lr_scheduler = get_cosine_schedule_with_warmup(
+        optimizer=optimizer,
+        num_warmup_steps=config.lr_warmup_steps,
+        num_training_steps=len(train_dataloader) * config.num_epochs,
+    )
+
+    train_loop(config, model, noise_scheduler, optimizer, train_dataloader, lr_scheduler)
+
+
+if __name__ == "__main__":
+    main()

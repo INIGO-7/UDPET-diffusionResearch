@@ -15,6 +15,7 @@ class TrainingConfig:
     output_dir = "ddpm-butterflies-128"  # the model name locally
 
     push_to_hub = False  # whether to upload the saved model to the HF Hub
+    overwrite_output_dir = True
     seed = 0
 
     dataset_name = "huggan/smithsonian_butterflies_subset"

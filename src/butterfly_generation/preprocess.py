@@ -18,4 +18,5 @@ def transform(examples):
 
 
 def transform_ds(dataset):
-    return dataset.set_transform(transform)
+    dataset.set_transform(transform)
+    return dataset

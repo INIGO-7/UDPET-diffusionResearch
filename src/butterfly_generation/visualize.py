@@ -1,26 +1,21 @@
-from datasets import load_dataset, load_from_disk
-from diffusers import DDPMScheduler
 import matplotlib.pyplot as plt
-from model import noise_scheduler
-import os
 import torch
+from diffusers import DDPMScheduler
 
-from config import config
+from data import load_butterflies
 from preprocess import transform_ds
 
-if os.path.exists(config.dataset_path):
-    dataset = load_from_disk(config.dataset_path)
-else:
-    dataset = load_dataset(config.dataset_name, split="train")
-    dataset.save_to_disk(config.dataset_path)
+dataset = load_butterflies()
+original_images = list(dataset[:4]["image"])  # capture PIL images before set_transform rewrites the accessor
 
 transformed_ds = transform_ds(dataset)
+noise_scheduler = DDPMScheduler(num_train_timesteps=1000)
 
 timesteps = torch.LongTensor([50])
 
 fig, axs = plt.subplots(2, 4, figsize=(16, 8))
 
-for i, image in enumerate(dataset[:4]["image"]):
+for i, image in enumerate(original_images):
     axs[0, i].imshow(image)
     axs[0, i].set_axis_off()
 
