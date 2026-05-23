@@ -137,7 +137,7 @@ donde $k = 10$ actúa como codo suave entre el régimen lineal y el logarítmico
 
 La arquitectura del U-Net es idéntica a la empleada en el modelo de mariposas, modificando exclusivamente los canales de entrada y salida. Las dimensiones y la topología se conservan:
 
-- `block_out_channels = (128, 128, 256, 256, 512, 512)`, lo cual produce un modelo de aproximadamente 80 millones de parámetros.
+- `block_out_channels = (128, 128, 256, 256, 512, 512)`, lo cual produce un modelo de aproximadamente 114 millones de parámetros (idéntico recuento al modelo de mariposas, dado que el primer canal convolucional contribuye una fracción despreciable al total).
 - `layers_per_block = 2`.
 - Bloque de atención multi-cabeza en el quinto nivel del camino descendente y ascendente (resolución espacial $16 \times 16$ tras cinco *downsamplings* del input de $256 \times 256$).
 
