@@ -16,15 +16,22 @@ Aquí se listan métodos y propuestas actualizadas, relacionadas con el problema
 - [Jun 2025] [link](https://www.sciencedirect.com/science/article/pii/S1361841524002597) Propone un modelo basado en el paradigma `MAMBA` para la reconstrucción de imágenes médicas y modelización de la incertidumbre es propuesto como el **estado del arte** para la tarea del **Low-dose PET**, además de la resonancia magnética (RM) rápida y la tomografía axial computarizada (TAC) "sparse-view"
 - [Jun 2024] [link](https://jnm.snmjournals.org/content/65/supplement_2/241109.abstract) In this work, we proposed a novel denoising diffusion probabilistic model (DDPM) based low dose PET image reconstruction method, named DDPEM. The proposed DDPEM integrates the iterative process of Expectation Maximization (EM) with the reverse sampling process of DDPM.
 - [Jun 2024] [link](https://academic.oup.com/bjrai/article/1/1/ubae013/7745314) Establece que los algoritmos de reconstrucción de imágenes que incorporan modelos de difusión no supervisados son el estado del arte para tareas como RM ultra rápido, TAC "super-sparse-view" y PET de dosis baja. Propone una introducción accesible a la reconstrucción de imágenes y los modelos de difusión, además de la metodología para reconstruir imágenes con modelos de difusión, retos específicos de la modalidad y los campos de investigación claves.
-- [Ene 2024] [link](https://arxiv.org/abs/2308.14190) 
+- [Ene 2024] [link](https://arxiv.org/abs/2308.14190) Score-Based Generative Models for PET Image Reconstruction.
 - [Oct 2023] [link](https://link.springer.com/article/10.1007/s00259-023-06417-8) Propone un Denoising Diffusion Probabilistic Model (DDPM) como modelo de aprendizaje de una distribución, y evalúa distintos métodos basados en DDPM para la reducción de ruido en escaneos PET.
 
 ## Fundamentos de modelos de difusión
 
-### `"Diffusion models for medical image reconstruction"` - Paper insights
+En el contexto de generación de datos, empezamos con una distribución de probabilidad `p(x)`, que representa nuestros datos de entrenamiento. En el caso de las imágenes, podemos pensar en esta distribución como una representación de todas las imágenes naturales; por simplicidad vamos a pensar en un subconjunto de imágenes conteniendo únicamente caras de personas. 
+Esta distribución es tan compleja que no podemos encontrar una sola expresión que la describa por completo. Igualmente, sin una fórmula en específico, buscamos generar imágenes nuevas, que es equivalente a  muestrear puntos de esta distribución subyacente. El reto es encontrar una forma de crear nuevos ejemplos, sin tener una manera comprensiva de encontrar la distribución. 
+Los modelos de difusión resolven este problema con un enfoque completamente diferente.
 
+### Referencias
+
+- [Jun 2020] [link](https://arxiv.org/abs/2006.11239) Paper que popularizó los modelos de difusión en 2020, llamado "Denoising Diffusion Probabilistic Models" hecho por Ho. et al.
+- [Mar 2015] [link](https://arxiv.org/abs/1503.03585) La referencia más temprana conocida a los modelos de difusión, paper titulado "Deep Unsupervised Learning using Nonequilibrium Thermodynamics", Sohl-Dickstein et al.
 
 ## Generando mariposas - modelos de difusión en acción
+
 
 
 ## Desarrollo - modelos de difusión para reconstrucción de escaneos PET
