@@ -17,6 +17,11 @@ Examples:
     python -m src.pet_reconstruction.main reconstruct --pipeline supervised \
         --checkpoint checkpoints/supervised/checkpoint-epoch-029
 
+    # 4) Evaluate a checkpoint on the held-out test split (metrics + figures)
+    python -m src.pet_reconstruction.main evaluate --pipeline supervised \
+        --checkpoint checkpoints/supervised/checkpoint-epoch-029 \
+        --output-dir evaluations/supervised/
+
 The flags --smoke for preprocess and train shrink the run to a ~1-hour
 end-to-end validation of the pipeline.
 """
@@ -43,6 +48,12 @@ def main() -> None:
     p_recon.add_argument("--pipeline", choices=["supervised", "unconditional"], required=True)
     # The remaining flags are passed through to the per-pipeline reconstruct script.
     p_recon.add_argument("recon_args", nargs=argparse.REMAINDER)
+
+    p_eval = subparsers.add_parser(
+        "evaluate", help="Run inference + metrics on a held-out split."
+    )
+    p_eval.add_argument("--pipeline", choices=["supervised", "unconditional"], required=True)
+    p_eval.add_argument("eval_args", nargs=argparse.REMAINDER)
 
     args = parser.parse_args()
 
@@ -81,6 +92,16 @@ def main() -> None:
             from .reconstruct_unconditional import main as recon_main
         sys.argv = [sys.argv[0], *(args.recon_args or [])]
         recon_main()
+        return
+
+    if args.command == "evaluate":
+        from .evaluate import main as eval_main
+
+        # The pipeline flag is consumed here AND re-injected for the inner parser,
+        # so the user can write the same flag set as if calling evaluate.py directly.
+        passthrough = ["--pipeline", args.pipeline, *(args.eval_args or [])]
+        sys.argv = [sys.argv[0], *passthrough]
+        eval_main()
         return
 
 
