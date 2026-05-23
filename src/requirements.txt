@@ -22,3 +22,6 @@ torch
 torchvision
 tqdm
 tensorboard
+
+# pet_reconstruction (low-dose PET MVP)
+scikit-image
