@@ -234,7 +234,9 @@ src/pet_reconstruction/
   model_unconditional.py          # UNet builder, in_channels=1
   train_unconditional.py          # bucle de entrenamiento Pipeline B
   reconstruct_unconditional.py    # DDIM-50 + guiado DPS, salida NIfTI
-  main.py                         # dispatcher --pipeline {supervised, unconditional}
+  evaluate.py                     # inferencia + métricas sobre un split (test/val) → CSV + JSON + figuras
+  main.py                         # dispatcher: preprocess / train / reconstruct / evaluate
+
 ```
 
 Un preset `--smoke` (50 pacientes, 5 épocas, resolución $128 \times 128$) permite verificar el flujo completo de extremo a extremo en aproximadamente una hora antes de comprometerse a los entrenamientos largos.
