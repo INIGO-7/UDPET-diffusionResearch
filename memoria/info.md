@@ -32,7 +32,55 @@ Los modelos de difusión resolven este problema con un enfoque completamente dif
 
 ## Generando mariposas - modelos de difusión en acción
 
+Como primer experimento práctico, se entrena un modelo DDPM (*Denoising Diffusion Probabilistic Model*) sobre un conjunto de imágenes de mariposas, con el objetivo de generar muestras sintéticas nuevas. Este ejercicio sirve como banco de pruebas para comprender el proceso de entrenamiento e inferencia antes de abordar el problema de reconstrucción de imágenes PET.
 
+### Datos y preprocesamiento
+
+Se utiliza el subconjunto `huggan/smithsonian_butterflies_subset` del Instituto Smithsoniano. Cada imagen se redimensiona a $128 \times 128$ píxeles, se aplica volteo horizontal aleatorio como aumento de datos, y se normaliza al rango $[-1, 1]$ mediante la transformación:
+
+$$x' = \frac{x - 0.5}{0.5}$$
+
+El conjunto se carga en lotes de 16 imágenes con orden aleatorio en cada época.
+
+### Proceso de difusión hacia delante
+
+El proceso de difusión hacia delante $q$ corrompe progresivamente una imagen limpia $\mathbf{x}_0$ añadiendo ruido gaussiano a lo largo de $T = 1000$ pasos discretos. En cada paso $t$, la distribución de la imagen ruidosa condicionada a la imagen anterior es:
+
+$$q(\mathbf{x}_t \mid \mathbf{x}_{t-1}) = \mathcal{N}\!\left(\mathbf{x}_t;\, \sqrt{1 - \beta_t}\,\mathbf{x}_{t-1},\, \beta_t \mathbf{I}\right)$$
+
+donde $\{\beta_t\}_{t=1}^{T}$ es un calendario de varianza predefinido. Gracias a la propiedad de reproducibilidad de la distribución gaussiana, este proceso admite una forma cerrada que permite muestrear $\mathbf{x}_t$ directamente desde $\mathbf{x}_0$ en un único paso:
+
+$$q(\mathbf{x}_t \mid \mathbf{x}_0) = \mathcal{N}\!\left(\mathbf{x}_t;\, \sqrt{\bar{\alpha}_t}\,\mathbf{x}_0,\, (1 - \bar{\alpha}_t)\mathbf{I}\right)$$
+
+donde $\alpha_t = 1 - \beta_t$ y $\bar{\alpha}_t = \prod_{s=1}^{t} \alpha_s$. En la práctica, esto equivale al muestreo por reparametrización:
+
+$$\mathbf{x}_t = \sqrt{\bar{\alpha}_t}\,\mathbf{x}_0 + \sqrt{1 - \bar{\alpha}_t}\,\boldsymbol{\varepsilon}, \qquad \boldsymbol{\varepsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$$
+
+### Arquitectura del modelo
+
+La red neuronal $\boldsymbol{\varepsilon}_\theta(\mathbf{x}_t, t)$, encargada de predecir el ruido, es una UNet2D con bloques ResNet y atención espacial. La arquitectura presenta seis niveles de resolución con canales $(128, 128, 256, 256, 512, 512)$ y dos capas ResNet por bloque. La atención multi-cabeza se incorpora únicamente en el quinto nivel, tanto en el camino descendente (`AttnDownBlock2D`) como en el ascendente (`AttnUpBlock2D`), donde la resolución espacial es suficientemente reducida para que el coste cuadrático de la atención sea asumible.
+
+El paso temporal $t$ se inyecta en cada bloque ResNet mediante *embeddings* sinusoidales, análogos a los empleados en el Transformer original, de modo que el modelo aprende una política de denoising condicional en el nivel de ruido.
+
+### Objetivo de entrenamiento
+
+En lugar de predecir directamente $\mathbf{x}_0$, el modelo sigue la formulación simplificada de Ho et al. (2020) y aprende a predecir el ruido $\boldsymbol{\varepsilon}$ a partir de la imagen ruidosa. La función de pérdida es el error cuadrático medio entre el ruido real y el predicho:
+
+$$\mathcal{L} = \mathbb{E}_{t \sim \mathcal{U}[1,T],\, \mathbf{x}_0,\, \boldsymbol{\varepsilon}}\!\left[\left\|\boldsymbol{\varepsilon} - \boldsymbol{\varepsilon}_\theta\!\left(\mathbf{x}_t, t\right)\right\|^2\right]$$
+
+En cada iteración se muestrea $t$ uniformemente en $\{1, \ldots, 1000\}$, se construye $\mathbf{x}_t$ mediante la ecuación de muestreo directo, y el gradiente se propaga únicamente a través de la predicción del modelo.
+
+### Configuración del entrenamiento
+
+El modelo se optimiza con AdamW con tasa de aprendizaje inicial $\eta = 10^{-4}$ y un planificador cosenoidal con 500 pasos de calentamiento (*warmup*). El entrenamiento se lleva a cabo durante 50 épocas con precisión mixta `fp16` para reducir el consumo de memoria, y se recortan los gradientes a norma máxima 1.0 para garantizar la estabilidad numérica.
+
+### Proceso de generación (inferencia)
+
+Para generar una nueva imagen, se parte de ruido puro $\mathbf{x}_T \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$ y se desnuida iterativamente aplicando el paso inverso aprendido durante $T$ iteraciones. En cada paso $t$, el scheduler DDPM recupera $\mathbf{x}_{t-1}$ como:
+
+$$\mathbf{x}_{t-1} = \frac{1}{\sqrt{\alpha_t}}\!\left(\mathbf{x}_t - \frac{\beta_t}{\sqrt{1 - \bar{\alpha}_t}}\,\boldsymbol{\varepsilon}_\theta(\mathbf{x}_t, t)\right) + \sigma_t\,\mathbf{z}, \qquad \mathbf{z} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$$
+
+Tras los $T = 1000$ pasos de denoising, $\mathbf{x}_0$ constituye la imagen sintética final. La implementación permite fijar una semilla aleatoria para garantizar reproducibilidad o variarla libremente para explorar el espacio generativo del modelo entrenado.
 
 ## Desarrollo - modelos de difusión para reconstrucción de escaneos PET
 
