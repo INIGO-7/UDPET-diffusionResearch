@@ -14,7 +14,7 @@ def evaluate(config, epoch, pipeline):
         generator=torch.Generator(device="cpu").manual_seed(config.seed),
     ).images
 
-    image_grid = make_image_grid(images, rows=4, cols=4)
+    image_grid = make_image_grid(images, rows=2, cols=2)
 
     test_dir = os.path.join(config.output_dir, "samples")
     os.makedirs(test_dir, exist_ok=True)
