@@ -9,16 +9,18 @@ Usage:
 
 import torch
 
-from ._train_engine import run_training
+from ._train_engine import resolve_resume_path, run_training
 from .config import SupervisedConfig
 from .data import build_paired_dataloader
 from .model_supervised import build_model, build_noise_scheduler
 
 
-def train(cfg: SupervisedConfig | None = None) -> None:
+def train(cfg: SupervisedConfig | None = None, resume_from: str | None = None) -> None:
     cfg = cfg or SupervisedConfig()
     output_dir = cfg.train.output_root / cfg.output_subdir
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    resume_path = resolve_resume_path(output_dir, resume_from) if resume_from else None
 
     train_loader = build_paired_dataloader(
         cfg.data.cache_dir,
@@ -41,6 +43,7 @@ def train(cfg: SupervisedConfig | None = None) -> None:
         output_dir,
         prepare_model_input=prepare_input,
         tracker_name="pet_supervised",
+        resume_from=resume_path,
     )
 
 

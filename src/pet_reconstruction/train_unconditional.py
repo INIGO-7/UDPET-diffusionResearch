@@ -9,16 +9,18 @@ Usage:
 
 import torch
 
-from ._train_engine import run_training
+from ._train_engine import resolve_resume_path, run_training
 from .config import UnconditionalConfig
 from .data import build_unpaired_dataloader
 from .model_unconditional import build_model, build_noise_scheduler
 
 
-def train(cfg: UnconditionalConfig | None = None) -> None:
+def train(cfg: UnconditionalConfig | None = None, resume_from: str | None = None) -> None:
     cfg = cfg or UnconditionalConfig()
     output_dir = cfg.train.output_root / cfg.output_subdir
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    resume_path = resolve_resume_path(output_dir, resume_from) if resume_from else None
 
     train_loader = build_unpaired_dataloader(
         cfg.data.cache_dir,
@@ -41,6 +43,7 @@ def train(cfg: UnconditionalConfig | None = None) -> None:
         output_dir,
         prepare_model_input=prepare_input,
         tracker_name="pet_unconditional",
+        resume_from=resume_path,
     )
 
 
