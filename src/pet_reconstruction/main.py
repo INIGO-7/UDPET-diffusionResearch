@@ -41,6 +41,12 @@ def main() -> None:
     p_train = subparsers.add_parser("train", help="Train one of the two pipelines.")
     p_train.add_argument("--pipeline", choices=["supervised", "unconditional"], required=True)
     p_train.add_argument("--smoke", action="store_true")
+    p_train.add_argument(
+        "--resume-from",
+        default=None,
+        help='Resume training. Pass "latest" to pick the newest checkpoint-epoch-* under '
+        "the pipeline's output dir, or the name of a specific checkpoint subdir.",
+    )
 
     p_recon = subparsers.add_parser(
         "reconstruct", help="Reconstruct test volumes from a checkpoint."
@@ -80,7 +86,7 @@ def main() -> None:
             cfg = UnconditionalConfig()
         if args.smoke:
             apply_smoke_overrides(cfg)
-        train_fn(cfg)
+        train_fn(cfg, resume_from=args.resume_from)
         return
 
     if args.command == "reconstruct":
