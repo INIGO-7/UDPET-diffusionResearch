@@ -3,8 +3,8 @@
 No conditioning: the U-Net only sees the noisy full-dose slice. The low-dose
 observation is reserved for inference-time DPS guidance.
 
-Usage:
-    python -m src.pet_reconstruction.train_unconditional
+Usage (from pet_reconstruction/):
+    python -m src.train_unconditional
 """
 
 import torch

@@ -12,7 +12,10 @@ from pathlib import Path
 @dataclass
 class DataConfig:
     # --- Raw inputs ---
-    raw_dataset_dir: Path = Path("res/dataset/compressed_PET")
+    # Paths are resolved from the pet_reconstruction/ directory (run scripts with
+    # `cd pet_reconstruction && python -m src.<module>`); the shared res/ and data/
+    # directories live one level up at the repo root.
+    raw_dataset_dir: Path = Path("../res/dataset/compressed_PET")
     full_dose_subdir: str = "dose_Full"
     low_dose_subdir: str = "dose_20"
     full_suffix: str = "_Full_dose.nii.gz"
@@ -21,8 +24,8 @@ class DataConfig:
     low_suffix_variants: tuple = (" 1-20 dose.nii.gz", "_1-20 dose.nii.gz")
 
     # --- Cached preprocessed slices ---
-    cache_dir: Path = Path("data/pet_cache")
-    splits_path: Path = Path("data/splits.json")
+    cache_dir: Path = Path("../data/pet_cache")
+    splits_path: Path = Path("../data/splits.json")
 
     # --- Crop & resize ---
     image_size: int = 256

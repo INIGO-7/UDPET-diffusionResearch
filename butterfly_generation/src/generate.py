@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import torch
 from diffusers import DDPMPipeline
 
-from config import config
+from .config import config
 
 
 MODEL_DIR = Path(__file__).parent / config.output_dir

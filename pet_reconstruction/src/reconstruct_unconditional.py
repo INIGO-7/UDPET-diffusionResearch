@@ -10,8 +10,8 @@ At each DDIM step:
        with ω/‖r‖ as the effective per-step scale (Chung et al 2023).
     4. Standard DDIM step on the corrected x_t with the original v̂_t.
 
-Usage:
-    python -m src.pet_reconstruction.reconstruct_unconditional \
+Usage (from pet_reconstruction/):
+    python -m src.reconstruct_unconditional \
         --checkpoint checkpoints/unconditional/checkpoint-epoch-029
 """
 

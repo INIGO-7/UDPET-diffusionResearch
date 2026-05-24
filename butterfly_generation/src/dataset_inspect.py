@@ -2,8 +2,8 @@
 butterfly_image_info.py
 Información básica sobre las imágenes del dataset smithsonian_butterflies_subset.
 
-Uso:
-    python butterfly_image_info.py --data_dir <ruta_a_data/butterflies>
+Uso (desde butterfly_generation/):
+    python -m src.dataset_inspect --data_dir <ruta_a_data/butterflies>
 
 El directorio debe contener el archivo .arrow (ej: data-00000-of-00001.arrow).
 """

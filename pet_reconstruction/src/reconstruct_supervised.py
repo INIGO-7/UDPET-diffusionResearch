@@ -7,8 +7,8 @@ For each patient in the requested split:
     - invert (asinh -> resize -> bbox) back to the original-grid count volume
     - save as a NIfTI with the original affine
 
-Usage:
-    python -m src.pet_reconstruction.reconstruct_supervised \
+Usage (from pet_reconstruction/):
+    python -m src.reconstruct_supervised \
         --checkpoint checkpoints/supervised/checkpoint-epoch-029
 """
 

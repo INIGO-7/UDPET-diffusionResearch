@@ -53,3 +53,39 @@ def four_panel_figure(
         plt.close(fig)
     else:
         plt.show()
+
+
+def three_panel_figure(
+    low: np.ndarray,
+    recon: np.ndarray,
+    full: np.ndarray,
+    save_path: Path | None = None,
+    title: str | None = None,
+    cmap: str = "gray",
+) -> None:
+    """Plot low-dose / reconstruction / full-dose side by side on a shared scale."""
+    vmin = float(min(low.min(), recon.min(), full.min()))
+    vmax = float(max(low.max(), recon.max(), full.max()))
+
+    fig, axs = plt.subplots(1, 3, figsize=(12, 4.2))
+    panels = [
+        ("Low dose (input)", low),
+        ("Reconstruction", recon),
+        ("Full dose (ground truth)", full),
+    ]
+    for ax, (lbl, img) in zip(axs, panels):
+        im = ax.imshow(img, cmap=cmap, vmin=vmin, vmax=vmax)
+        ax.set_title(lbl, fontsize=10)
+        ax.set_axis_off()
+        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
+    if title is not None:
+        fig.suptitle(title, fontsize=11)
+    plt.tight_layout()
+
+    if save_path is not None:
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=120, bbox_inches="tight")
+        plt.close(fig)
+    else:
+        plt.show()

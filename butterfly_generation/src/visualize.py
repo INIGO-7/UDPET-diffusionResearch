@@ -2,8 +2,8 @@ import matplotlib.pyplot as plt
 import torch
 from diffusers import DDPMScheduler
 
-from data import load_butterflies
-from preprocess import transform_ds
+from .data import load_butterflies
+from .preprocess import transform_ds
 
 dataset = load_butterflies()
 original_images = list(dataset[:4]["image"])  # capture PIL images before set_transform rewrites the accessor

@@ -8,9 +8,9 @@ Cache layout under `cache_dir`:
     {patient_id}/full/{NNN}.pt     normalized full-dose slice at original z index NNN
     {patient_id}/low/{NNN}.pt      normalized low-dose slice at the same z index
 
-Usage:
-    python -m src.pet_reconstruction.preprocess
-    python -m src.pet_reconstruction.preprocess --smoke --limit 50
+Usage (from pet_reconstruction/):
+    python -m src.preprocess
+    python -m src.preprocess --smoke --limit 50
 """
 
 import json

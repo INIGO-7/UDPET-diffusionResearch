@@ -15,8 +15,8 @@ Outputs under `--output-dir`:
     summary.json       dataset-wide aggregate, plus the run config
     figures/{pid}_slice{NNNN}.png
 
-Usage:
-    python -m src.pet_reconstruction.evaluate --pipeline supervised \
+Usage (from pet_reconstruction/):
+    python -m src.evaluate --pipeline supervised \
         --checkpoint checkpoints/supervised/checkpoint-epoch-029 \
         --output-dir evaluations/supervised/
 """

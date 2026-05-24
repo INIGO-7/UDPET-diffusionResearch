@@ -3,8 +3,8 @@ import os
 import torch
 from datasets import load_dataset, load_from_disk
 
-from config import config
-from preprocess import transform_ds
+from .config import config
+from .preprocess import transform_ds
 
 
 def load_butterflies():

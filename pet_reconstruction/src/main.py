@@ -1,26 +1,32 @@
 """Top-level dispatcher for the PET reconstruction MVP.
 
-Examples:
+Examples (run from the pet_reconstruction/ directory):
     # 1) Preprocess every volume (one-time, ~hours)
-    python -m src.pet_reconstruction.main preprocess
+    python -m src.main preprocess
 
     # 1b) Smoke variant: 50 patients, 128x128 resolution
-    python -m src.pet_reconstruction.main preprocess --smoke --limit 50
+    python -m src.main preprocess --smoke --limit 50
 
     # 2) Train Pipeline A
-    python -m src.pet_reconstruction.main train --pipeline supervised
+    python -m src.main train --pipeline supervised
 
     # 2b) Train Pipeline B
-    python -m src.pet_reconstruction.main train --pipeline unconditional
+    python -m src.main train --pipeline unconditional
 
     # 3) Reconstruct test volumes with a trained checkpoint
-    python -m src.pet_reconstruction.main reconstruct --pipeline supervised \
+    python -m src.main reconstruct --pipeline supervised \
         --checkpoint checkpoints/supervised/checkpoint-epoch-029
 
     # 4) Evaluate a checkpoint on the held-out test split (metrics + figures)
-    python -m src.pet_reconstruction.main evaluate --pipeline supervised \
+    python -m src.main evaluate --pipeline supervised \
         --checkpoint checkpoints/supervised/checkpoint-epoch-029 \
         --output-dir evaluations/supervised/
+
+    # 5) Preview ONE test slice — low / recon / full side by side
+    python -m src.main preview --pipeline supervised --list
+    python -m src.main preview --pipeline supervised \
+        --checkpoint checkpoints/supervised/checkpoint-epoch-029 \
+        --patient-id <test_pid> --slice-idx 120
 
 The flags --smoke for preprocess and train shrink the run to a ~1-hour
 end-to-end validation of the pipeline.
@@ -60,6 +66,15 @@ def main() -> None:
     )
     p_eval.add_argument("--pipeline", choices=["supervised", "unconditional"], required=True)
     p_eval.add_argument("eval_args", nargs=argparse.REMAINDER)
+
+    p_preview = subparsers.add_parser(
+        "preview",
+        help="Render a single-slice low / recon / full figure from a test patient.",
+    )
+    p_preview.add_argument(
+        "--pipeline", choices=["supervised", "unconditional"], required=True
+    )
+    p_preview.add_argument("preview_args", nargs=argparse.REMAINDER)
 
     args = parser.parse_args()
 
@@ -108,6 +123,14 @@ def main() -> None:
         passthrough = ["--pipeline", args.pipeline, *(args.eval_args or [])]
         sys.argv = [sys.argv[0], *passthrough]
         eval_main()
+        return
+
+    if args.command == "preview":
+        from .preview_reconstruction import main as preview_main
+
+        passthrough = ["--pipeline", args.pipeline, *(args.preview_args or [])]
+        sys.argv = [sys.argv[0], *passthrough]
+        preview_main()
         return
 
 

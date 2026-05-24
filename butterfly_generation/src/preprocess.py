@@ -1,7 +1,7 @@
 import torchvision.transforms.functional as TF
 from torchvision import transforms
 
-from config import config
+from .config import config
 
 
 class ResizeToFit:

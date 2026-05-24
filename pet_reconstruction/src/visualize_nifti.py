@@ -4,10 +4,10 @@ Visualizador comparativo de dosis completa vs dosis 1/20 (PET NIfTI).
 Muestra los tres planos ortogonales de ambos volúmenes en paralelo con
 sliders sincronizados para navegar por los cortes.
 
-Uso:
-    python src/visualize_nifti.py                         # primer par del dataset
-    python src/visualize_nifti.py <prefijo>               # ej. "01122021_1_20211201_164050"
-    python src/visualize_nifti.py <ruta_full> <ruta_20>   # rutas absolutas/relativas
+Uso (desde pet_reconstruction/):
+    python -m src.visualize_nifti                         # primer par del dataset
+    python -m src.visualize_nifti <prefijo>               # ej. "01122021_1_20211201_164050"
+    python -m src.visualize_nifti <ruta_full> <ruta_20>   # rutas absolutas/relativas
 
 Dependencias:
     pip install nibabel matplotlib numpy
@@ -22,9 +22,9 @@ import nibabel as nib
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, Button
 
-# Raíz del proyecto: un nivel por encima de src/, independientemente de dónde
-# esté ubicado este script dentro del árbol de directorios.
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Raíz del proyecto: dos niveles por encima de este archivo (pet_reconstruction/src/
+# -> pet_reconstruction/ -> TFM/), independientemente del cwd.
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 DOSE_FULL_DIR = os.path.join(_PROJECT_ROOT, "res", "dataset", "compressed_PET", "dose_Full")
 DOSE_20_DIR   = os.path.join(_PROJECT_ROOT, "res", "dataset", "compressed_PET", "dose_20")

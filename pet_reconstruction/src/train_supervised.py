@@ -3,8 +3,8 @@
 Builds the paired dataloader, the 2-channel-input UNet and the DDPM scheduler,
 then delegates the v-prediction MSE training loop to `_train_engine`.
 
-Usage:
-    python -m src.pet_reconstruction.train_supervised
+Usage (from pet_reconstruction/):
+    python -m src.train_supervised
 """
 
 import torch
