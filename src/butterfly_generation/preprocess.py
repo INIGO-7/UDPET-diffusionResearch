@@ -4,6 +4,21 @@ from torchvision import transforms
 from config import config
 
 
+class ResizeToFit:
+    """Resize image so its largest axis equals `size`, preserving aspect ratio."""
+    def __init__(self, size):
+        self.size = size
+
+    def __call__(self, img):
+        w, h = img.size
+        if max(w, h) == self.size:
+            return img
+        scale = self.size / max(w, h)
+        new_w = max(1, round(w * scale))
+        new_h = max(1, round(h * scale))
+        return TF.resize(img, [new_h, new_w])
+
+
 class PadToSquare:
     """Pad image to a square with white fill, centering the content."""
     def __init__(self, size, fill=255):
@@ -23,6 +38,7 @@ class PadToSquare:
 
 preprocess = transforms.Compose(
     [
+        ResizeToFit(config.image_size),
         PadToSquare(config.image_size, fill=255),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
