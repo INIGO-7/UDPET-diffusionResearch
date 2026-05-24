@@ -25,6 +25,22 @@ En el contexto de generación de datos, empezamos con una distribución de proba
 Esta distribución es tan compleja que no podemos encontrar una sola expresión que la describa por completo. Igualmente, sin una fórmula en específico, buscamos generar imágenes nuevas, que es equivalente a  muestrear puntos de esta distribución subyacente. El reto es encontrar una forma de crear nuevos ejemplos, sin tener una manera comprensiva de encontrar la distribución. 
 Los modelos de difusión resolven este problema con un enfoque completamente diferente.
 
+Se encuentra un proceso de difusión que transforma cualquier distribución en una distribución normal $N(0,1)$. La distribución condicional `q` es definida para ir de un paso al siguiente, se define la distribución condicional `p` para ir hacia atrás en la dirección opuesta. En el proceso hacia delante todos los parámetros están fijos, pero para el proceso hacia detrás el objetivo es de hecho encontrar los mejores parámetros $theta$ que ayuden a quitar el ruido de manera efectiva. Entrenaremos una red neuronal precisamente con el fin de encontrar estos parámetros.
+
+Cómo entrenamos esta red neuronal? Para entrenarla minimizaremos la log-verosimilitud de la probabilidad de producir una muestra con nuestro modelo. De manera más sencilla, significa encontrar el conjunto de parámetros $theta$ que maximizan la probabilidad de generar muestras reales $x_0$ de la distribución de nuestros datos usando la red neuronal.
+
+La probabilidad conjunta describiendo la distribución de todas las variables desde $x_1$ hasta $x_t$ dado $x_0$ representa el proceso hacia delante por completo:
+$$q(x_1, \ldots, x_T \mid x_0) = q(x_1 \mid x_0)\, q(x_2 \mid x_1, x_0)\, \ldots\, q(x_T \mid x_{T-1}, \ldots, x_0)$$
+
+El proceso hacia delante (forward process) del modelo de difusión es una cadena de markov, lo cuál significa que cada paso del proceso de adición de ruido depende exclusivamente del paso anterior, lo cuál simplifica las probabilidades condicionales.
+
+$$q(x_1, \ldots, x_T \mid x_0) = q(x_1 \mid x_0)\, q(x_2 \mid x_1)\, \ldots\, q(x_T \mid x_{T-1})$$
+
+Podemos establecer los procesos hacia delante y hacia atrás como:
+- Proceso hacia delante completo: $q(x_{1:T} \mid x_0) = \prod_{t=1}^{T} q(x_t \mid x_{t-1})$
+- Proceso hacia detrás completo: $p_\theta(x_{0:T}) = p_\theta(x_T) \prod_{t=1}^{T} p_\theta(x_{t-1} \mid x_t)$
+
+
 ### Referencias
 
 - [Jun 2020] [link](https://arxiv.org/abs/2006.11239) Paper que popularizó los modelos de difusión en 2020, llamado "Denoising Diffusion Probabilistic Models" hecho por Ho. et al.
@@ -81,6 +97,21 @@ Para generar una nueva imagen, se parte de ruido puro $\mathbf{x}_T \sim \mathca
 $$\mathbf{x}_{t-1} = \frac{1}{\sqrt{\alpha_t}}\!\left(\mathbf{x}_t - \frac{\beta_t}{\sqrt{1 - \bar{\alpha}_t}}\,\boldsymbol{\varepsilon}_\theta(\mathbf{x}_t, t)\right) + \sigma_t\,\mathbf{z}, \qquad \mathbf{z} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$$
 
 Tras los $T = 1000$ pasos de denoising, $\mathbf{x}_0$ constituye la imagen sintética final. La implementación permite fijar una semilla aleatoria para garantizar reproducibilidad o variarla libremente para explorar el espacio generativo del modelo entrenado.
+
+### Aprendizajes adquiridos y conclusiones
+
+Los modelos de difusión son buenos generalizando ya que es más complicado que puedan memorizar los ejemplos de entrenamiento, dado que van a ver las mismas imágenes pero con una cantidad de ruido completamente diferente entre un epoch y otro.
+Se ven forzados a aprender la distribución subyacente de las imágenes que analizan, en este caso, aprendiendo como es una mariposa.
+Aprender a predecir la cantidad de ruido que hay en una imagen es matemáticamente equivalente a predecir la imagen de una mariposa a partir de una imagen ruidosa.
+
+Se ha observado que la pérdida durante el entrenamiento decrece muy rápidamente en los primeros epoch, y después se estabiliza a lo largo de todo el proceso de entrenamiento. Esto no significa que el modelo deje de aprender una vez se estabiliza la pérdida, sino que aprende a predecir la cantidad de ruido que hay en las imágenes más rápidamente; pero los parámetros se siguen actualizando y aprendiendo con más certeza la distribución subyacente de imágenes de mariposas. 
+
+(TODO - poner imágenes de mariposas comparando los resultados en los primeros epoch vs en los últimos)
+
+A pesar de que el loss es el mismo que en epoch más tempranos, observamos que las imágenes empiezan a ser buenas en el epoch 90, parando en el epoch 100, en el cuál podemos obtener resultados como los siguientes:
+
+(TODO - poner los mejores resultados de inferencia de mariposas, escogiéndolos a mano)
+
 
 ## Desarrollo - modelos de difusión para reconstrucción de escaneos PET
 
