@@ -27,6 +27,8 @@ def train(cfg: UnconditionalConfig | None = None, resume_from: str | None = None
         cfg.data.splits_path,
         split="train",
         batch_size=cfg.train.train_batch_size,
+        num_workers=cfg.train.num_workers,
+        pin_memory=cfg.train.pin_memory,
     )
     model = build_model(cfg)
     noise_scheduler = build_noise_scheduler(cfg)

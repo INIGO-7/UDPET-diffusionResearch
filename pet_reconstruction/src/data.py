@@ -69,11 +69,17 @@ def build_paired_dataloader(
     batch_size: int,
     shuffle: bool = True,
     num_workers: int = 2,
+    pin_memory: bool = False,
 ) -> DataLoader:
     ids = load_splits(splits_path)[split]
     ds = PairedSliceDataset(cache_dir, ids)
     return DataLoader(
-        ds, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, pin_memory=False
+        ds,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=num_workers > 0,
     )
 
 
@@ -84,9 +90,15 @@ def build_unpaired_dataloader(
     batch_size: int,
     shuffle: bool = True,
     num_workers: int = 2,
+    pin_memory: bool = False,
 ) -> DataLoader:
     ids = load_splits(splits_path)[split]
     ds = FullDoseOnlyDataset(cache_dir, ids)
     return DataLoader(
-        ds, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, pin_memory=False
+        ds,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=num_workers > 0,
     )

@@ -70,10 +70,14 @@ class TrainConfig:
     beta_schedule: str = "squaredcos_cap_v2"
 
     # --- Optimization budget ---
-    train_batch_size: int = 4
-    gradient_accumulation_steps: int = 4  # effective batch size = 16
+    # Tuned for a single 32 GB CUDA GPU (RTX PRO 4500 Blackwell). On MPS, drop
+    # train_batch_size to 4, set gradient_accumulation_steps to 4, and switch
+    # mixed_precision back to "no".
+    train_batch_size: int = 32
+    gradient_accumulation_steps: int = 1  # effective batch size = 32
     num_epochs: int = 30
-    learning_rate: float = 1e-4
+    # Scaled ~sqrt(32/16) from the original 1e-4 baseline to track the larger batch.
+    learning_rate: float = 1.4e-4
     lr_warmup_steps: int = 500
     grad_clip_norm: float = 1.0
 
@@ -81,8 +85,12 @@ class TrainConfig:
     use_ema: bool = True
     ema_decay: float = 0.9999
 
-    # fp32 chosen for MPS reliability (fp16 has historical NaN risk on MPS).
-    mixed_precision: str = "no"
+    # bf16 on Blackwell tensor cores: ~2x throughput vs fp32 with no NaN risk.
+    mixed_precision: str = "bf16"
+
+    # --- DataLoader ---
+    num_workers: int = 8
+    pin_memory: bool = True
 
     # --- Checkpointing / logging ---
     save_model_epochs: int = 5

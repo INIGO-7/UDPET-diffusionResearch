@@ -94,6 +94,12 @@ def run_training(
         resume_from: directory of a prior checkpoint (containing training_state/ and
             metadata.json) to resume from. None starts fresh.
     """
+    # Free speedup for any residual fp32 matmuls on Ampere+/Blackwell GPUs.
+    if torch.cuda.is_available():
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+        torch.backends.cudnn.benchmark = True
+
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.train.learning_rate)
     lr_scheduler = get_cosine_schedule_with_warmup(
         optimizer=optimizer,
