@@ -8,14 +8,17 @@ y paradigma de entrenamiento" for the rationale of every value.
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# Repo root = parent of the `pet_reconstruction/` package directory.
+# Anchoring data paths here makes the CLI work from any CWD.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 @dataclass
 class DataConfig:
     # --- Raw inputs ---
-    # Paths are resolved from the pet_reconstruction/ directory (run scripts with
-    # `cd pet_reconstruction && python -m src.<module>`); the shared res/ and data/
-    # directories live one level up at the repo root.
-    raw_dataset_dir: Path = Path("../res/dataset/compressed_PET")
+    # Paths are anchored to the repo root (parent of pet_reconstruction/) so the
+    # CLI works regardless of CWD.
+    raw_dataset_dir: Path = _REPO_ROOT / "res/dataset/compressed_PET"
     full_dose_subdir: str = "dose_Full"
     low_dose_subdir: str = "dose_20"
     full_suffix: str = "_Full_dose.nii.gz"
@@ -24,8 +27,8 @@ class DataConfig:
     low_suffix_variants: tuple = (" 1-20 dose.nii.gz", "_1-20 dose.nii.gz")
 
     # --- Cached preprocessed slices ---
-    cache_dir: Path = Path("../data/pet_cache")
-    splits_path: Path = Path("../data/splits.json")
+    cache_dir: Path = _REPO_ROOT / "data/pet_cache"
+    splits_path: Path = _REPO_ROOT / "data/splits.json"
 
     # --- Crop & resize ---
     image_size: int = 256
