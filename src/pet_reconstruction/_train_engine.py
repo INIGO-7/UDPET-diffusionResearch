@@ -7,6 +7,7 @@ optimization loop, EMA, mixed precision, checkpointing and logging
 identical and centralized in this module.
 """
 
+import json
 from pathlib import Path
 from typing import Callable
 
@@ -18,14 +19,40 @@ from diffusers.training_utils import EMAModel
 from tqdm.auto import tqdm
 
 
+def resolve_resume_path(output_dir: Path, resume_setting: str) -> Path | None:
+    """Resolve `resume_setting` against `output_dir`.
+
+    Accepts either "latest" (newest checkpoint-epoch-* under output_dir) or a
+    specific subdir name. Returns None if nothing matches.
+    """
+    if not output_dir.is_dir():
+        return None
+    if resume_setting == "latest":
+        candidates = sorted(output_dir.glob("checkpoint-epoch-*"))
+        return candidates[-1] if candidates else None
+    candidate = output_dir / resume_setting
+    return candidate if candidate.is_dir() else None
+
+
 def _save_checkpoint(
     accelerator: Accelerator,
     model,
     ema: EMAModel | None,
     noise_scheduler,
     save_dir: Path,
+    epoch: int,
+    global_step: int,
 ) -> None:
-    """Save EMA-applied weights + scheduler config. Non-EMA weights are restored after."""
+    """Save inference-ready EMA weights AND full training state for resume.
+
+    Layout under `save_dir`:
+        unet/            EMA-applied U-Net (consumed by reconstruct/evaluate)
+        scheduler/       noise scheduler config
+        training_state/  accelerator.save_state output: live model params,
+                         optimizer, lr scheduler, RNG, and EMA shadow params
+                         (EMA is registered with the accelerator below)
+        metadata.json    epoch + global_step needed to resume the loop
+    """
     save_dir.mkdir(parents=True, exist_ok=True)
     unwrapped = accelerator.unwrap_model(model)
     if ema is not None:
@@ -36,6 +63,10 @@ def _save_checkpoint(
     if ema is not None:
         ema.restore(unwrapped.parameters())
 
+    accelerator.save_state(str(save_dir / "training_state"))
+    with open(save_dir / "metadata.json", "w") as f:
+        json.dump({"epoch": epoch, "global_step": global_step}, f)
+
 
 def run_training(
     cfg,
@@ -45,6 +76,7 @@ def run_training(
     output_dir: Path,
     prepare_model_input: Callable[[dict, torch.Tensor], torch.Tensor],
     tracker_name: str,
+    resume_from: Path | None = None,
 ) -> None:
     """Run the v-prediction training loop with EMA, accumulation and tensorboard.
 
@@ -59,6 +91,8 @@ def run_training(
             For Pipeline A: torch.cat([noisy_full, batch["low"]], dim=1).
             For Pipeline B: just noisy_full.
         tracker_name: tensorboard run name.
+        resume_from: directory of a prior checkpoint (containing training_state/ and
+            metadata.json) to resume from. None starts fresh.
     """
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.train.learning_rate)
     lr_scheduler = get_cosine_schedule_with_warmup(
@@ -85,9 +119,24 @@ def run_training(
         if cfg.train.use_ema
         else None
     )
+    # Register EMA so its shadow params are part of accelerator.save_state/load_state.
+    if ema is not None:
+        accelerator.register_for_checkpointing(ema)
 
+    first_epoch = 0
     global_step = 0
-    for epoch in range(cfg.train.num_epochs):
+    if resume_from is not None:
+        accelerator.load_state(str(resume_from / "training_state"))
+        with open(resume_from / "metadata.json") as f:
+            meta = json.load(f)
+        first_epoch = meta["epoch"] + 1
+        global_step = meta["global_step"]
+        if accelerator.is_main_process:
+            accelerator.print(
+                f"Resumed from {resume_from} (epoch {meta['epoch']}, step {global_step})"
+            )
+
+    for epoch in range(first_epoch, cfg.train.num_epochs):
         progress = tqdm(total=len(train_loader), disable=not accelerator.is_local_main_process)
         progress.set_description(f"Epoch {epoch}")
 
@@ -132,7 +181,9 @@ def run_training(
             is_last = epoch == cfg.train.num_epochs - 1
             if (epoch + 1) % cfg.train.save_model_epochs == 0 or is_last:
                 save_dir = output_dir / f"checkpoint-epoch-{epoch:03d}"
-                _save_checkpoint(accelerator, model, ema, noise_scheduler, save_dir)
+                _save_checkpoint(
+                    accelerator, model, ema, noise_scheduler, save_dir, epoch, global_step
+                )
                 accelerator.print(f"Saved checkpoint to {save_dir}")
 
     accelerator.end_training()
