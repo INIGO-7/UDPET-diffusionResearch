@@ -1,3 +1,4 @@
+import json
 import os
 
 import torch
@@ -21,7 +22,7 @@ def evaluate(config, epoch, pipeline):
     image_grid.save(f"{test_dir}/{epoch:04d}.png")
 
 
-def train_loop(config, model, noise_scheduler, optimizer, train_dataloader, lr_scheduler):
+def train_loop(config, model, noise_scheduler, optimizer, train_dataloader, lr_scheduler, resume_from=None):
     accelerator = Accelerator(
         mixed_precision=config.mixed_precision,
         gradient_accumulation_steps=config.gradient_accumulation_steps,
@@ -36,9 +37,19 @@ def train_loop(config, model, noise_scheduler, optimizer, train_dataloader, lr_s
         model, optimizer, train_dataloader, lr_scheduler
     )
 
+    first_epoch = 0
     global_step = 0
 
-    for epoch in range(config.num_epochs):
+    if resume_from is not None:
+        accelerator.load_state(os.path.join(resume_from, "training_state"))
+        with open(os.path.join(resume_from, "metadata.json")) as f:
+            meta = json.load(f)
+        first_epoch = meta["epoch"] + 1
+        global_step = meta["global_step"]
+        if accelerator.is_main_process:
+            print(f"Resumed from {resume_from} (epoch {meta['epoch']}, step {global_step})")
+
+    for epoch in range(first_epoch, config.num_epochs):
         progress_bar = tqdm(total=len(train_dataloader), disable=not accelerator.is_local_main_process)
         progress_bar.set_description(f"Epoch {epoch}")
 
@@ -82,4 +93,9 @@ def train_loop(config, model, noise_scheduler, optimizer, train_dataloader, lr_s
                 evaluate(config, epoch, pipeline)
 
             if (epoch + 1) % config.save_model_epochs == 0 or is_last_epoch:
-                pipeline.save_pretrained(config.output_dir)
+                checkpoint_dir = os.path.join(config.output_dir, f"checkpoint-epoch-{epoch + 1:04d}")
+                os.makedirs(checkpoint_dir, exist_ok=True)
+                pipeline.save_pretrained(checkpoint_dir)
+                accelerator.save_state(os.path.join(checkpoint_dir, "training_state"))
+                with open(os.path.join(checkpoint_dir, "metadata.json"), "w") as f:
+                    json.dump({"epoch": epoch, "global_step": global_step}, f)
