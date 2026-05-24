@@ -248,10 +248,10 @@ En términos prácticos, esto corresponde a aproximadamente una semana de cómpu
 
 ### Estructura del código
 
-El código fuente se organiza como un único paquete `src/pet_reconstruction/` con infraestructura compartida y módulos específicos por pipeline:
+El código fuente se organiza como un único paquete `pet_reconstruction/src/` con infraestructura compartida y módulos específicos por pipeline:
 
 ```
-src/pet_reconstruction/
+pet_reconstruction/src/
   config.py                       # dataclasses, sub-configs por pipeline
   volume_io.py                    # NIfTI I/O, bbox, arcsinh + inverso
   splits.py                       # split 80/10/10 a nivel paciente → JSON
