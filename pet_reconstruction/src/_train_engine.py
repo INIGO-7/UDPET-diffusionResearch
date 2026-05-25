@@ -77,6 +77,8 @@ def run_training(
     prepare_model_input: Callable[[dict, torch.Tensor], torch.Tensor],
     tracker_name: str,
     resume_from: Path | None = None,
+    preview_sampler: Callable[[torch.nn.Module], dict[str, torch.Tensor]] | None = None,
+    preview_references: dict[str, torch.Tensor] | None = None,
 ) -> None:
     """Run the v-prediction training loop with EMA, accumulation and tensorboard.
 
@@ -93,6 +95,11 @@ def run_training(
         tracker_name: tensorboard run name.
         resume_from: directory of a prior checkpoint (containing training_state/ and
             metadata.json) to resume from. None starts fresh.
+        preview_sampler: optional callable invoked at each checkpoint with the
+            EMA-applied unwrapped U-Net in eval mode. Must return a dict mapping
+            TensorBoard tag -> CHW image tensor (values roughly in [0, 1]).
+        preview_references: optional dict of fixed reference images logged once
+            at the first preview step (e.g. ground-truth full + low-dose inputs).
     """
     # Free speedup for any residual fp32 matmuls on Ampere+/Blackwell GPUs.
     if torch.cuda.is_available():
@@ -141,6 +148,8 @@ def run_training(
             accelerator.print(
                 f"Resumed from {resume_from} (epoch {meta['epoch']}, step {global_step})"
             )
+
+    preview_refs_logged = False
 
     for epoch in range(first_epoch, cfg.train.num_epochs):
         progress = tqdm(total=len(train_loader), disable=not accelerator.is_local_main_process)
@@ -191,5 +200,49 @@ def run_training(
                     accelerator, model, ema, noise_scheduler, save_dir, epoch, global_step
                 )
                 accelerator.print(f"Saved checkpoint to {save_dir}")
+
+                if preview_sampler is not None:
+                    writer = accelerator.get_tracker("tensorboard", unwrap=True)
+                    if not preview_refs_logged and preview_references is not None:
+                        for tag, img in preview_references.items():
+                            writer.add_image(
+                                tag, img.clamp(0, 1), global_step, dataformats="CHW"
+                            )
+                        preview_refs_logged = True
+
+                    # Mirror the EMA swap from _save_checkpoint so previews use
+                    # the same weights that will be loaded at inference time.
+                    unwrapped = accelerator.unwrap_model(model)
+                    if ema is not None:
+                        ema.store(unwrapped.parameters())
+                        ema.copy_to(unwrapped.parameters())
+                    was_training = unwrapped.training
+                    unwrapped.eval()
+
+                    # Isolate preview RNG so the deterministic init noise reused
+                    # across checkpoints doesn't perturb the training trajectory.
+                    cpu_state = torch.random.get_rng_state()
+                    cuda_state = (
+                        torch.cuda.get_rng_state_all()
+                        if torch.cuda.is_available()
+                        else None
+                    )
+                    torch.manual_seed(cfg.train.seed)
+                    try:
+                        images = preview_sampler(unwrapped)
+                    finally:
+                        torch.random.set_rng_state(cpu_state)
+                        if cuda_state is not None:
+                            torch.cuda.set_rng_state_all(cuda_state)
+                        if was_training:
+                            unwrapped.train()
+                        if ema is not None:
+                            ema.restore(unwrapped.parameters())
+
+                    for tag, img in images.items():
+                        writer.add_image(
+                            tag, img.clamp(0, 1), global_step, dataformats="CHW"
+                        )
+                    writer.flush()
 
     accelerator.end_training()

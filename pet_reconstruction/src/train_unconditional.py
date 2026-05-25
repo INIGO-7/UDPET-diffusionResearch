@@ -11,8 +11,58 @@ import torch
 
 from ._train_engine import resolve_resume_path, run_training
 from .config import UnconditionalConfig
-from .data import build_unpaired_dataloader
+from .data import PairedSliceDataset, build_unpaired_dataloader
 from .model_unconditional import build_model, build_noise_scheduler
+from .reconstruct_unconditional import _build_ddim_scheduler, ddim_dps_sample
+from .splits import load_splits
+
+
+def _build_preview(cfg: UnconditionalConfig, num_samples: int = 2):
+    """Pick fixed paired val slices and return (sampler, references) for previews.
+
+    Pipeline B is unconditional, but to give each preview a 'corresponding
+    full-dose' to compare against we mirror the inference-time DPS setup: feed
+    the low-dose slice as guidance `y`.
+    """
+    val_ids = load_splits(cfg.data.splits_path)["val"]
+    ds = PairedSliceDataset(cfg.data.cache_dir, val_ids)
+    if len(ds) == 0:
+        return None, None
+
+    step = max(len(ds) // (num_samples + 1), 1)
+    indices = [min(step * (i + 1), len(ds) - 1) for i in range(num_samples)]
+
+    sample_ids: list[str] = []
+    low_list: list[torch.Tensor] = []
+    references: dict[str, torch.Tensor] = {}
+    for idx in indices:
+        full_p, _ = ds.entries[idx]
+        pid = full_p.parent.parent.name
+        sid = f"{pid}__{full_p.stem}"
+        item = ds[idx]
+        sample_ids.append(sid)
+        low_list.append(item["low"])
+        references[f"samples/{sid}/full"] = item["full"]
+        references[f"samples/{sid}/low"] = item["low"]
+
+    y_batch = torch.stack(low_list)  # (N, 1, H, W)
+    ddim_scheduler = _build_ddim_scheduler(cfg)
+
+    def sampler(unet: torch.nn.Module) -> dict[str, torch.Tensor]:
+        device = next(unet.parameters()).device
+        # ddim_dps_sample needs autograd through the UNet; do NOT wrap in no_grad.
+        recon = ddim_dps_sample(
+            unet,
+            ddim_scheduler,
+            y_batch.to(device),
+            cfg.sample.num_inference_steps,
+            cfg.sample.ddim_eta,
+            cfg.sample.dps_omega,
+            device,
+        ).cpu()
+        return {f"samples/{sid}/recon": recon[i] for i, sid in enumerate(sample_ids)}
+
+    return sampler, references
 
 
 def train(cfg: UnconditionalConfig | None = None, resume_from: str | None = None) -> None:
@@ -37,6 +87,8 @@ def train(cfg: UnconditionalConfig | None = None, resume_from: str | None = None
         # No conditioning: feed the noisy slice unchanged.
         return noisy_full
 
+    preview_sampler, preview_refs = _build_preview(cfg)
+
     run_training(
         cfg,
         model,
@@ -46,6 +98,8 @@ def train(cfg: UnconditionalConfig | None = None, resume_from: str | None = None
         prepare_model_input=prepare_input,
         tracker_name="pet_unconditional",
         resume_from=resume_path,
+        preview_sampler=preview_sampler,
+        preview_references=preview_refs,
     )
 
 
