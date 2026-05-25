@@ -11,3 +11,12 @@ checkpoints/*
 *.png
 *.jpeg
 *.jpg
+
+# Latex compilation
+main.aux
+main.bbl
+main.blg
+main.log
+main.out
+main.pdf
+main.toc
