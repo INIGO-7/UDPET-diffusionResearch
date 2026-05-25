@@ -1,0 +1,74 @@
+% =====================================================================
+% Capítulo 5 — Conclusiones
+% =====================================================================
+\chapter{Conclusiones}
+\label{cap:conclusiones}
+
+\section{Resumen del trabajo realizado}
+\label{sec:resumen}
+
+\todo{Recapitular brevemente: revisión de fundamentos teóricos
+de los modelos de difusión, experimento controlado con mariposas,
+diseño e implementación del MVP de reconstrucción PET en dos
+\textit{pipelines} (supervisado condicional y prior no
+condicional con DPS), evaluación sobre el conjunto de test.}
+
+\section{Resultados principales}
+\label{sec:resultados}
+
+\todo{Sintetizar los resultados cuantitativos (PSNR, SSIM,
+NRMSE, preservación de intensidad) y cualitativos (figuras
+4-panel) obtenidos por ambos \textit{pipelines}, y discutir la
+comparación entre el enfoque supervisado y el prior no
+condicional con guiado.}
+
+\section{Líneas de desarrollo futuro}
+\label{sec:lineas-futuras}
+
+Se identifican cinco extensiones, ordenadas por proximidad a la
+implementación del MVP.
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{DPS con $\sigma(\mathbf{y})$ dependiente de la
+    intensidad.} Modelar la estadística de Poisson del ruido PET
+    propagada a través de la normalización $\operatorname{arcsinh}$
+    y sustituir la verosimilitud isotrópica del Pipeline~B por
+    una verosimilitud heteroscedástica. Es la extensión natural
+    más cercana al planteamiento sobre el ruido descrito en la
+    \Cref{sec:pet-ruido}.
+
+    \item \textbf{Contexto 2.5D o 3D.} Añadir \textit{slices}
+    vecinos como canales adicionales de entrada (2.5D) para
+    introducir coherencia inter-\textit{slice}, o pasar a un
+    U-Net 3D sobre parches si el hardware se amplía.
+
+    \item \textbf{Reponderado de pérdida por SNR mínimo.}
+    Activación del \textit{Min-SNR-$\gamma$} de Hang et
+    al.~\cite{hang2023minsnr} si la convergencia del
+    \textit{v-prediction} con 30 épocas resulta insuficiente.
+
+    \item \textbf{Modelos puente (I\textsuperscript{2}SB).}
+    Liu et al.~\cite{liu2023i2sb} proponen entrenar un modelo
+    cuyo proceso directo mapee directamente la distribución de
+    dosis completa a la de dosis baja mediante un puente de
+    Schrödinger, sustituyendo el ruido gaussiano del
+    \textit{schedule} por una transición entre las dos
+    distribuciones de interés. Es la línea más cercana a la
+    observación recogida en la \Cref{sec:pet-ruido}: el proceso
+    directo del modelo imita explícitamente la reducción de
+    dosis. Constituye una línea prometedora para un capítulo
+    de \textit{contribución} en la memoria, o como punto de
+    partida para una futura tesis doctoral.
+
+    \item \textbf{Métricas clínicas.} En el caso de obtener
+    metadatos de dosis inyectada y peso del paciente, computar
+    SUV reales y reportar preservación de SUV en regiones de
+    interés segmentadas (manualmente o con un modelo auxiliar).
+\end{enumerate}
+
+\section{Reflexión final}
+\label{sec:reflexion}
+
+\todo{Reflexión personal sobre el aprendizaje adquirido durante
+el TFM y su encaje con los contenidos del Máster en Tratamiento
+Estadístico-Computacional de la Información.}

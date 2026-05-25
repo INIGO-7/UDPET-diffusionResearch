@@ -1,0 +1,101 @@
+% =====================================================================
+% Capítulo 1 — Introducción
+% =====================================================================
+\chapter{Introducción}
+\label{cap:introduccion}
+
+\section{Conociendo el dominio}
+\label{sec:dominio}
+
+\subsection{¿Qué es un escaneo PET?}
+
+\textit{Positron Emission Tomography}, o PET, es un test de imágenes
+que utiliza material radiactivo para diagnosticar, monitorizar y
+tratar una variedad de condiciones y enfermedades. Los doctores
+pueden utilizar este tipo de escaneo para encontrar tumores,
+diagnosticar enfermedades de corazón, trastornos del cerebro, y otros.
+Este escaneo es preferido frente a otros (p.\,ej. rayos X) ya que
+utiliza un trazador radiactivo que puede mostrar cómo funcionan los
+órganos en tiempo real.
+
+\subsection{¿Qué es un problema inverso?}
+\label{subsec:problema-inverso}
+
+El problema inverso consiste en reconstruir la imagen idealizada a
+partir de la imagen medida; en nuestro caso, reconstruir el escaneo
+PET producido con la máxima dosis de radiación y tiempo en la
+máquina a partir de una imagen realizada con mediciones parciales.
+
+\section{Motivación e interés del tema}
+\label{sec:motivacion}
+
+\todo{Desarrollar la motivación académica y profesional del trabajo:
+relevancia clínica de reducir la dosis administrada al paciente,
+interés metodológico de la familia de modelos de difusión, encaje
+con los contenidos del Máster.}
+
+\section{Objetivos}
+\label{sec:objetivos}
+
+\todo{Enumerar los objetivos del TFM: (i) revisión del estado del
+arte en reconstrucción de imágen médica con modelos de difusión;
+(ii) implementación y validación de un experimento controlado de
+difusión sobre un dominio sencillo (mariposas); (iii) diseño,
+implementación y evaluación de un MVP para la reconstrucción de
+PET de dosis baja con dos paradigmas (supervisado condicional y
+prior no condicional con guiado de medición); (iv) comparación
+empírica entre ambos pipelines.}
+
+\section{Estado del arte}
+\label{sec:estado-del-arte}
+
+A continuación se listan métodos y propuestas actualizadas
+relacionadas con el problema de la reconstrucción de imágenes
+médicas. Las referencias completas se recogen en la bibliografía.
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{[Diciembre 2025]} Se propone un \textit{Task-Adaptive
+    Transformer} (TAT) para la restauración de imágenes médicas,
+    que reclama alcanzar el \textbf{estado del arte} en las tareas
+    de síntesis de PET, reducción de ruido en TAC y
+    \textit{super-resolution} de RM~\cite{tat2025}.
+
+    \item \textbf{[Junio 2025]} Se propone un modelo basado en el
+    paradigma \texttt{MAMBA} para la reconstrucción de imágenes
+    médicas y modelización de la incertidumbre, presentado como el
+    \textbf{estado del arte} para la tarea del \textit{low-dose PET},
+    además de la resonancia magnética rápida y la tomografía axial
+    computarizada \textit{sparse-view}~\cite{mamba2025}.
+
+    \item \textbf{[Junio 2024]} Se propone un \textit{denoising
+    diffusion probabilistic model} (DDPM) para la reconstrucción de
+    PET de dosis baja, denominado DDPEM, que integra el proceso
+    iterativo de Expectation Maximization (EM) con el proceso de
+    muestreo inverso de un DDPM~\cite{ddpem2024}.
+
+    \item \textbf{[Junio 2024]} Se establece que los algoritmos de
+    reconstrucción de imágenes que incorporan modelos de difusión
+    no supervisados son el estado del arte para tareas como RM
+    ultra rápido, TAC \textit{super-sparse-view} y PET de dosis baja.
+    El trabajo aporta una introducción accesible a la reconstrucción
+    de imágenes y a los modelos de difusión, además de la
+    metodología, los retos específicos de la modalidad y los campos
+    de investigación clave~\cite{bjrai2024}.
+
+    \item \textbf{[Enero 2024]} Trabajo sobre \textit{Score-Based
+    Generative Models} aplicados a la reconstrucción de imágenes
+    PET~\cite{scorepet2024}.
+
+    \item \textbf{[Octubre 2023]} Se propone un \textit{Denoising
+    Diffusion Probabilistic Model} (DDPM) como modelo de aprendizaje
+    de una distribución, y se evalúan distintos métodos basados en
+    DDPM para la reducción de ruido en escaneos PET~\cite{ddpmpet2023}.
+\end{itemize}
+
+\section{Estructura de la memoria}
+\label{sec:estructura}
+
+\todo{Resumir en un párrafo qué se cubre en cada capítulo: marco
+teórico de los modelos de difusión, experimento preliminar con
+mariposas, diseño y entrenamiento de los pipelines de
+reconstrucción PET, evaluación, conclusiones y líneas futuras.}

@@ -1,0 +1,97 @@
+\documentclass[a4paper,12pt]{report}
+
+% --- Codificación y lengua ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-tabla]{babel}
+
+% --- Matemáticas y gráficos ---
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{color}
+\usepackage{xcolor}
+
+% --- Tipografía y diseño de página ---
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{microtype}
+\usepackage{setspace}
+\onehalfspacing
+
+% --- Tablas y listas ---
+\usepackage{booktabs}
+\usepackage{enumitem}
+
+% --- Referencias cruzadas e hipervínculos ---
+\usepackage[hidelinks]{hyperref}
+\usepackage{cleveref}
+
+% --- Algoritmos ---
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+% --- Bibliografía ---
+\bibliographystyle{plain}
+
+% --- Macros útiles ---
+\newcommand{\todo}[1]{\textcolor{red}{\textbf{[TODO: #1]}}}
+
+\begin{document}
+
+% =====================================================================
+% Carátula UPM/UCM
+% La plantilla institucional vive en TECI_Caratula_UPM_TeX.tex
+% (documento independiente). Aquí se replica su contenido para
+% incrustarla como portada de la memoria.
+% =====================================================================
+\thispagestyle{empty}
+\begin{center}
+
+{MÁSTER EN TRATAMIENTO ESTADÍSTICO-COMPUTACIONAL DE LA INFORMACIÓN}\\[2em]
+{\large TRABAJO FIN DE MÁSTER}\\[1.5em]
+{\LARGE\bf Estudio de modelos de difusión como herramienta de IA generativa para la
+reconstrucción y síntesis de datos}\\[1.5em]
+{\large\bf Iñigo Fernández-Sopeña Hernández}\\[5em]
+
+\includegraphics[scale=1.5]{img/TECI_Escudo_UPM} \hspace{2cm}
+\includegraphics[scale=1.5]{img/TECI_Escudo_UCM} \\[2.5em]
+
+{UNIVERSIDAD POLITÉCNICA DE MADRID}\\[0.25em]
+{\footnotesize ESCUELA TÉCNICA SUPERIOR DE INGENIEROS DE TELECOMUNICACIÓN}\\[0.25em]
+{\&}\\[0.25em]
+{UNIVERSIDAD COMPLUTENSE DE MADRID}\\[0.25em]
+{\footnotesize FACULTAD DE CIENCIAS MATEMÁTICAS}\\[2em]
+
+\noindent\rule{13.5cm}{0.4pt}\vspace{2em}
+
+{Tutor: Ignacio Villanueva Díez}\\[3em]
+{Madrid, a junio de 2026}
+
+\end{center}
+\clearpage
+
+% =====================================================================
+% Frontmatter: abstract + índice
+% =====================================================================
+\pagenumbering{roman}
+
+\input{chapters/abstract}
+\clearpage
+
+\tableofcontents
+\clearpage
+
+\pagenumbering{arabic}
+
+% =====================================================================
+% Capítulos
+% =====================================================================
+\input{chapters/introduccion}
+\input{chapters/desarrollo}
+\input{chapters/conclusiones}
+
+% =====================================================================
+% Bibliografía
+% =====================================================================
+\bibliography{bibliografia}
+
+\end{document}
