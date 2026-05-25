@@ -1,9 +1,11 @@
-/res
 .DS_Store
 __pycache__
+
+/res
 data
 logs/
 ddpm*/
+checkpoints/*
 
 # Image formats
 *.png
