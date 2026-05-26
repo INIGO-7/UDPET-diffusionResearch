@@ -21,3 +21,7 @@ main.log
 main.out
 main.pdf
 main.toc
+
+# AI
+CLAUDE.md
+.claude/
