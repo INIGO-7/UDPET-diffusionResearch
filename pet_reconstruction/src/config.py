@@ -73,8 +73,8 @@ class TrainConfig:
     # Tuned for a single 32 GB CUDA GPU (RTX PRO 4500 Blackwell). On MPS, drop
     # train_batch_size to 4, set gradient_accumulation_steps to 4, and switch
     # mixed_precision back to "no".
-    train_batch_size: int = 8
-    gradient_accumulation_steps: int = 4  # effective batch size = 32
+    train_batch_size: int = 32
+    gradient_accumulation_steps: int = 1  # effective batch size = 32
     num_epochs: int = 100
     # Scaled ~sqrt(32/16) from the original 1e-4 baseline to track the larger batch.
     learning_rate: float = 1.4e-4
@@ -89,7 +89,7 @@ class TrainConfig:
     mixed_precision: str = "bf16"
 
     # --- DataLoader ---
-    num_workers: int = 8
+    num_workers: int = 16
     pin_memory: bool = True
 
     # --- Checkpointing / logging ---
