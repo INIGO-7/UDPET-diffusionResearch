@@ -140,6 +140,8 @@ def run_training(
     global_step = 0
     if resume_from is not None:
         accelerator.load_state(str(resume_from / "training_state"))
+        if ema is not None:
+            ema.to(accelerator.device)
         with open(resume_from / "metadata.json") as f:
             meta = json.load(f)
         first_epoch = meta["epoch"] + 1
