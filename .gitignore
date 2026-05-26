@@ -6,6 +6,7 @@ data
 logs/
 ddpm*/
 checkpoints/*
+*/checkpoints/*
 
 # Image formats
 *.png
