@@ -89,7 +89,7 @@ class TrainConfig:
     mixed_precision: str = "bf16"
 
     # --- DataLoader ---
-    num_workers: int = 12
+    num_workers: int = 16
     pin_memory: bool = True
 
     # --- Checkpointing / logging ---
