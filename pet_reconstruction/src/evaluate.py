@@ -195,6 +195,12 @@ def main() -> None:
     )
     parser.add_argument("--inference-batch-size", type=int, default=4)
     parser.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="Seed for the sampler's initial noise, so the metric table is reproducible.",
+    )
+    parser.add_argument(
         "--omega",
         type=float,
         default=None,
@@ -217,6 +223,12 @@ def main() -> None:
     figure_dir.mkdir(parents=True, exist_ok=True)
 
     device = _pick_device()
+    # Seed the global RNG so the sampler's initial noise (and therefore every
+    # metric) is reproducible. Reproducibility holds for a fixed batch order and
+    # inference-batch-size, since slices consume the RNG stream sequentially.
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
     print(f"Loading checkpoint from {args.checkpoint} (device={device})")
     unet = UNet2DModel.from_pretrained(args.checkpoint / "unet").to(device).eval()
 
@@ -279,6 +291,8 @@ def main() -> None:
             "image_size": cfg.data.image_size,
             "num_inference_steps": cfg.sample.num_inference_steps,
             "ddim_eta": cfg.sample.ddim_eta,
+            "seed": args.seed,
+            "inference_batch_size": args.inference_batch_size,
             "dps_omega": cfg.sample.dps_omega if args.pipeline == "unconditional" else None,
         },
         "aggregate_metrics": aggregate,
