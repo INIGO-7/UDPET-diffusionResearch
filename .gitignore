@@ -13,6 +13,9 @@ checkpoints/*
 *.jpeg
 *.jpg
 
+# Volume formats
+*.nii.gz
+
 # Latex compilation
 main.aux
 main.bbl
