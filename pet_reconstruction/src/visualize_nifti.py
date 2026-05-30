@@ -37,10 +37,21 @@ DOSE_20_DIR   = os.path.join(_PROJECT_ROOT, "res", "dataset", "compressed_PET", 
 def _prefix(path: str) -> str:
     """Extrae el prefijo temporal compartido por ambas dosis."""
     name = os.path.basename(path)
-    for suffix in ("_Full_dose.nii.gz", "_1-20 dose.nii.gz", "_Full_dose.nii", "_1-20 dose.nii"):
+    for suffix in ("_Full_dose.nii.gz", "_1-20 dose.nii.gz", "_Full_dose.nii",
+                   "_1-20 dose.nii", "_recon.nii.gz", "_recon.nii"):
         if name.endswith(suffix):
             return name[: -len(suffix)]
     return name
+
+
+def _dose_label(path: str) -> str:
+    """Etiqueta legible derivada del nombre de archivo."""
+    name = os.path.basename(path)
+    if "recon" in name:
+        return "Reconstrucción"
+    if "Full" in name:
+        return "Full dose"
+    return "1/20 dose"
 
 
 def list_pairs() -> list[tuple[str, str]]:
@@ -127,6 +138,9 @@ def show_comparison(path_full: str, path_20: str, pairs: list[tuple[str, str]] |
     clim_full = load_clim(path_full)
     clim_20   = load_clim(path_20)
 
+    label_top = _dose_label(path_full)
+    label_bot = _dose_label(path_20)
+
     fig, axes = plt.subplots(2, 3, figsize=(13, 8))
     title_obj = fig.suptitle("", fontsize=9)
 
@@ -137,14 +151,14 @@ def show_comparison(path_full: str, path_20: str, pairs: list[tuple[str, str]] |
             if idx is not None:
                 idx_str = f"  [{idx + 1}/{len(pairs)}]"
         title_obj.set_text(
-            f"Full dose  (arriba)   vs   1/20 dose  (abajo){idx_str}\n{_prefix(pf)}"
+            f"{label_top}  (arriba)   vs   {label_bot}  (abajo){idx_str}\n{_prefix(pf)}"
         )
 
     _update_title(path_full)
 
     vols       = [vol_full, vol_20]
     clims      = [clim_full, clim_20]
-    row_labels = ["Full dose", "1/20 dose"]
+    row_labels = [label_top, label_bot]
     ims        = []
 
     for row, (vol, cl, rlabel) in enumerate(zip(vols, clims, row_labels)):
