@@ -74,12 +74,18 @@ def evaluate_patient(
     inference_batch_size: int = 4,
     figure_slice_idx: int | None = None,
     figure_dir: Path | None = None,
+    baseline: bool = False,
 ) -> list[dict]:
     """Run inference + per-slice metrics for one patient.
 
     If `figure_slice_idx` is provided AND `figure_dir` is set, also saves a
     4-panel figure for that single slice index (counted within the patient's
     kept slices, 0-based).
+
+    If `baseline` is True, no model is run: the low-dose slice itself is used as
+    the "reconstruction" (identity / no-op baseline). Everything downstream —
+    foreground mask, normalized + count-space metrics, aggregation — is identical
+    to a real evaluation, so the two runs are directly comparable.
     """
     full_paths = sorted((cfg.data.cache_dir / patient_id / "full").glob("*.pt"))
     low_paths = sorted((cfg.data.cache_dir / patient_id / "low").glob("*.pt"))
@@ -105,7 +111,10 @@ def evaluate_patient(
         )
         full_batch_cpu = torch.stack([_load_slice(p) for p in chunk_full])  # (B, H, W) on CPU
 
-        if pipeline == "supervised":
+        if baseline:
+            # Identity baseline: the low-dose slice IS the prediction.
+            recon = low_batch
+        elif pipeline == "supervised":
             recon = ddim_sample_conditional(
                 unet, scheduler, low_batch,
                 cfg.sample.num_inference_steps, cfg.sample.ddim_eta, device,
@@ -183,7 +192,13 @@ def _write_csv(rows: list[dict], path: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate a trained checkpoint on a held-out split.")
     parser.add_argument("--pipeline", choices=["supervised", "unconditional"], required=True)
-    parser.add_argument("--checkpoint", type=Path, required=True)
+    parser.add_argument("--checkpoint", type=Path, default=None)
+    parser.add_argument(
+        "--baseline",
+        action="store_true",
+        help="Identity baseline: score the raw low-dose slices against the full-dose "
+        "ground truth (no model run, no --checkpoint needed).",
+    )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--split", default="test", choices=["train", "val", "test"])
     parser.add_argument("--limit", type=int, default=None, help="Evaluate first N patients only.")
@@ -208,6 +223,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if not args.baseline and args.checkpoint is None:
+        parser.error("--checkpoint is required unless --baseline is set.")
+
     # ----- Build config / scheduler / model -----
     if args.pipeline == "supervised":
         cfg = SupervisedConfig()
@@ -229,8 +247,12 @@ def main() -> None:
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(args.seed)
-    print(f"Loading checkpoint from {args.checkpoint} (device={device})")
-    unet = UNet2DModel.from_pretrained(args.checkpoint / "unet").to(device).eval()
+    if args.baseline:
+        print(f"Identity baseline mode (no model) — device={device}")
+        unet = None
+    else:
+        print(f"Loading checkpoint from {args.checkpoint} (device={device})")
+        unet = UNet2DModel.from_pretrained(args.checkpoint / "unet").to(device).eval()
 
     metadata = json.loads((cfg.data.cache_dir / "metadata.json").read_text())
     patient_ids = load_splits(cfg.data.splits_path)[args.split]
@@ -263,6 +285,7 @@ def main() -> None:
             inference_batch_size=args.inference_batch_size,
             figure_slice_idx=fig_slice,
             figure_dir=figure_dir if pid in figure_patients else None,
+            baseline=args.baseline,
         )
         all_slice_rows.extend(slice_rows)
 
@@ -283,7 +306,8 @@ def main() -> None:
     aggregate = aggregate_volume_metrics([_metrics_only(r) for r in per_volume_rows])
     summary = {
         "pipeline": args.pipeline,
-        "checkpoint": str(args.checkpoint),
+        "baseline": args.baseline,
+        "checkpoint": str(args.checkpoint) if args.checkpoint is not None else None,
         "split": args.split,
         "n_patients": len(per_volume_rows),
         "n_slices": len(all_slice_rows),
