@@ -7,6 +7,8 @@ logs/
 ddpm*/
 checkpoints/*
 */checkpoints/*
+evaluations/*
+*/evaluations/*
 
 # Image formats
 *.png
