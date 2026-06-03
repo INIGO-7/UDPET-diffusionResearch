@@ -45,9 +45,10 @@ from .reconstruct_unconditional import (
     _build_ddim_scheduler as _build_sched_unc,
     ddim_dps_sample,
 )
-from .splits import load_splits
+from .preprocess import prepare_low_dose
+from .splits import load_splits, match_low_dose
 from .visualize import four_panel_figure
-from .volume_io import asinh_denormalize
+from .volume_io import asinh_denormalize, load_volume
 
 
 def _pick_device() -> str:
@@ -68,7 +69,6 @@ def evaluate_patient(
     cfg,
     unet: UNet2DModel,
     scheduler,
-    metadata: dict,
     device: str,
     pipeline: str,
     inference_batch_size: int = 4,
@@ -93,8 +93,18 @@ def evaluate_patient(
         f"Mismatched cache for {patient_id}: {len(full_paths)} full vs {len(low_paths)} low"
     )
 
-    M = metadata[patient_id]["M"]
-    k = metadata[patient_id]["k"]
+    # M is estimated from the low-dose volume AT RUNTIME (never read from
+    # metadata), matching exactly what reconstruct does on an unseen scan. The
+    # cached slices were normalized with this same low-derived M, so denormalizing
+    # back to counts stays exact.
+    low_path = match_low_dose(
+        patient_id,
+        cfg.data.raw_dataset_dir / cfg.data.low_dose_subdir,
+        cfg.data.low_suffix_variants,
+    )
+    low_vol, _, _ = load_volume(low_path)
+    M = prepare_low_dose(low_vol, cfg.data)["M"]
+    k = cfg.data.asinh_k
 
     per_slice: list[dict] = []
 
@@ -280,7 +290,7 @@ def main() -> None:
         fig_slice = n_kept // 2 if pid in figure_patients else None
 
         slice_rows = evaluate_patient(
-            pid, cfg, unet, scheduler, metadata, device,
+            pid, cfg, unet, scheduler, device,
             pipeline=args.pipeline,
             inference_batch_size=args.inference_batch_size,
             figure_slice_idx=fig_slice,

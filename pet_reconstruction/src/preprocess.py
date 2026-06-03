@@ -32,6 +32,32 @@ from .volume_io import (
 )
 
 
+def prepare_low_dose(low_vol: np.ndarray, cfg: DataConfig) -> dict:
+    """Derive the normalization geometry from a LOW-dose volume alone.
+
+    Single source of truth shared by offline preprocessing and runtime inference,
+    so the frame the model is trained in matches exactly what inference can
+    reconstruct from an unseen low-dose scan. Nothing here touches the full dose:
+
+        bbox          foreground bounding box (low-dose)
+        low_resized   cropped + axially resized stack, (S, S, Z)
+        M             asinh percentile scale (low-dose)
+        kept_indices  axial slices passing the foreground-fraction filter
+
+    All four are later applied identically to the paired full-dose target during
+    preprocessing, and recomputed on the fly during reconstruction.
+    """
+    bbox = compute_foreground_bbox(low_vol, threshold=cfg.foreground_threshold)
+    low_resized = resize_axial(crop_with_bbox(low_vol, bbox), cfg.image_size)  # (S, S, Z)
+    M = compute_norm_percentile(low_resized, cfg.norm_percentile)
+    fg_frac = (low_resized > cfg.foreground_threshold).mean(axis=(0, 1))  # (Z,)
+    kept_indices = [
+        z for z in range(low_resized.shape[2])
+        if float(fg_frac[z]) >= cfg.min_foreground_fraction
+    ]
+    return {"bbox": bbox, "low_resized": low_resized, "M": float(M), "kept_indices": kept_indices}
+
+
 def preprocess_volume(
     patient_id: str,
     full_dose_dir: Path,
@@ -54,34 +80,28 @@ def preprocess_volume(
         f"Paired volume shape mismatch for {patient_id}: {full_vol.shape} vs {low_vol.shape}"
     )
 
-    # 1) Foreground bbox computed on FULL dose only, applied identically to both.
-    bbox = compute_foreground_bbox(full_vol, threshold=cfg.foreground_threshold)
-    full_crop = crop_with_bbox(full_vol, bbox)
-    low_crop = crop_with_bbox(low_vol, bbox)
+    # Bbox, normalization scale M and the slice filter are ALL derived from the
+    # LOW dose alone (the only volume available at inference) and applied
+    # identically to the full-dose target. prepare_low_dose() is the single source
+    # of truth shared with the reconstruction path, so train/inference match.
+    prep = prepare_low_dose(low_vol, cfg)
+    bbox = prep["bbox"]
+    M = prep["M"]
+    kept_indices = prep["kept_indices"]
+    low_resized = prep["low_resized"]
 
-    # 2) Per-slice axial resize to (image_size, image_size).
-    full_resized = resize_axial(full_crop, cfg.image_size)  # (S, S, Z)
-    low_resized = resize_axial(low_crop, cfg.image_size)
-
-    # 3) Per-volume normalization scale M from FULL dose; same M applied to LOW dose.
-    M = compute_norm_percentile(full_resized, cfg.norm_percentile)
+    # Crop + resize the full-dose target with the SAME low-derived bbox, then
+    # normalize both volumes with the SAME low-derived M.
+    full_resized = resize_axial(crop_with_bbox(full_vol, bbox), cfg.image_size)  # (S, S, Z)
     full_norm = asinh_normalize(full_resized, M, cfg.asinh_k).astype(np.float32)
     low_norm = asinh_normalize(low_resized, M, cfg.asinh_k).astype(np.float32)
-
-    # 4) Slice filter: keep slices whose foreground fraction (in original count space,
-    #    measured on the cropped+resized full-dose) is above the threshold.
-    fg_frac = (full_resized > cfg.foreground_threshold).mean(axis=(0, 1))  # (Z,)
 
     full_cache = cache_dir / patient_id / "full"
     low_cache = cache_dir / patient_id / "low"
     full_cache.mkdir(parents=True, exist_ok=True)
     low_cache.mkdir(parents=True, exist_ok=True)
 
-    kept_indices: list[int] = []
-    Z = full_norm.shape[2]
-    for z in range(Z):
-        if float(fg_frac[z]) < cfg.min_foreground_fraction:
-            continue
+    for z in kept_indices:
         idx_str = f"{z:04d}"
         torch.save(
             torch.from_numpy(full_norm[:, :, z]).to(torch.float16),
@@ -91,7 +111,6 @@ def preprocess_volume(
             torch.from_numpy(low_norm[:, :, z]).to(torch.float16),
             low_cache / f"{idx_str}.pt",
         )
-        kept_indices.append(z)
 
     return {
         "patient_id": patient_id,
