@@ -30,7 +30,8 @@ from pathlib import Path
 import torch
 from diffusers import UNet2DModel
 
-from .config import SupervisedConfig, UnconditionalConfig
+from .config import RegressionUNetConfig, SupervisedConfig, UnconditionalConfig
+from .reconstruct_regression import regress_batch
 from .reconstruct_supervised import (
     _build_ddim_scheduler as _build_sched_sup,
     ddim_sample_conditional,
@@ -89,7 +90,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Render a single low / recon / full comparison for one test slice."
     )
-    parser.add_argument("--pipeline", choices=["supervised", "unconditional"], required=True)
+    parser.add_argument(
+        "--pipeline",
+        choices=["supervised", "unconditional", "regression"],
+        required=True,
+    )
     parser.add_argument(
         "--checkpoint",
         type=Path,
@@ -128,6 +133,8 @@ def main() -> None:
 
     if args.pipeline == "supervised":
         cfg = SupervisedConfig()
+    elif args.pipeline == "regression":
+        cfg = RegressionUNetConfig()
     else:
         cfg = UnconditionalConfig()
         if args.omega is not None:
@@ -174,24 +181,38 @@ def main() -> None:
     device = _pick_device()
     print(f"Loading checkpoint from {args.checkpoint} (device={device})")
     unet = UNet2DModel.from_pretrained(args.checkpoint / "unet").to(device).eval()
-    scheduler = (
-        _build_sched_sup(cfg) if args.pipeline == "supervised" else _build_sched_unc(cfg)
-    )
+    if args.pipeline == "supervised":
+        scheduler = _build_sched_sup(cfg)
+    elif args.pipeline == "regression":
+        scheduler = None
+    else:
+        scheduler = _build_sched_unc(cfg)
 
     low_t = _load_slice(low_path)
     full_t = _load_slice(full_path)
     low_batch = low_t.unsqueeze(0).unsqueeze(0).to(device)  # (1, 1, H, W)
 
-    print(
-        f"Sampling slice {full_path.stem} of {args.patient_id} "
-        f"with {cfg.sample.num_inference_steps} DDIM steps..."
-    )
     if args.pipeline == "supervised":
+        print(
+            f"Sampling slice {full_path.stem} of {args.patient_id} "
+            f"with {cfg.sample.num_inference_steps} DDIM steps..."
+        )
         recon = ddim_sample_conditional(
             unet, scheduler, low_batch,
             cfg.sample.num_inference_steps, cfg.sample.ddim_eta, device,
         )
+    elif args.pipeline == "regression":
+        print(
+            f"Regressing slice {full_path.stem} of {args.patient_id} "
+            f"(single forward pass)..."
+        )
+        with torch.no_grad():
+            recon = regress_batch(unet, low_batch)
     else:
+        print(
+            f"Sampling slice {full_path.stem} of {args.patient_id} "
+            f"with {cfg.sample.num_inference_steps} DDIM steps..."
+        )
         recon = ddim_dps_sample(
             unet, scheduler, low_batch,
             cfg.sample.num_inference_steps, cfg.sample.ddim_eta,

@@ -120,6 +120,27 @@ class SupervisedConfig:
 
 
 @dataclass
+class RegressionUNetConfig:
+    """Baseline A — the supervised U-Net trained as a direct regressor.
+
+    Same architecture and training budget as SupervisedConfig, but the diffusion
+    process is removed: a single input channel (low-dose only), no noise
+    scheduler, and an MSE objective in the asinh [-1, 1] model space. Inference
+    is a single forward pass with a constant timestep (the time embedding
+    collapses to a fixed, learnable per-block bias). There is no SampleConfig:
+    nothing is sampled iteratively.
+    """
+
+    pipeline: str = "regression"
+    in_channels: int = 1   # low-dose conditioning only (no noisy x_t channel)
+    out_channels: int = 1  # direct full-dose estimate
+    output_subdir: str = "regression_unet"
+    data: DataConfig = field(default_factory=DataConfig)
+    model: ModelConfig = field(default_factory=ModelConfig)
+    train: TrainConfig = field(default_factory=TrainConfig)
+
+
+@dataclass
 class UnconditionalConfig:
     pipeline: str = "unconditional"
     in_channels: int = 1

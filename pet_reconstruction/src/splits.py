@@ -1,8 +1,8 @@
-"""Patient-level 80/10/10 split shared by both pipelines.
+"""Patient-level 80/10/10 split shared by every pipeline.
 
 The split is deterministic given the seed and persisted to JSON, so the
-supervised and unconditional pipelines are evaluated on EXACTLY the same
-test volumes — a precondition for the headline A vs B comparison.
+supervised, unconditional and regression-baseline pipelines are evaluated on
+EXACTLY the same test volumes — a precondition for the headline comparisons.
 """
 
 import json

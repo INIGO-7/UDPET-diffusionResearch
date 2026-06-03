@@ -44,8 +44,12 @@ def main() -> None:
     p_pre.add_argument("--limit", type=int, default=None)
     p_pre.add_argument("--smoke", action="store_true")
 
-    p_train = subparsers.add_parser("train", help="Train one of the two pipelines.")
-    p_train.add_argument("--pipeline", choices=["supervised", "unconditional"], required=True)
+    p_train = subparsers.add_parser("train", help="Train one of the pipelines.")
+    p_train.add_argument(
+        "--pipeline",
+        choices=["supervised", "unconditional", "regression"],
+        required=True,
+    )
     p_train.add_argument("--smoke", action="store_true")
     p_train.add_argument(
         "--resume-from",
@@ -57,14 +61,22 @@ def main() -> None:
     p_recon = subparsers.add_parser(
         "reconstruct", help="Reconstruct test volumes from a checkpoint."
     )
-    p_recon.add_argument("--pipeline", choices=["supervised", "unconditional"], required=True)
+    p_recon.add_argument(
+        "--pipeline",
+        choices=["supervised", "unconditional", "regression"],
+        required=True,
+    )
     # The remaining flags are passed through to the per-pipeline reconstruct script.
     p_recon.add_argument("recon_args", nargs=argparse.REMAINDER)
 
     p_eval = subparsers.add_parser(
         "evaluate", help="Run inference + metrics on a held-out split."
     )
-    p_eval.add_argument("--pipeline", choices=["supervised", "unconditional"], required=True)
+    p_eval.add_argument(
+        "--pipeline",
+        choices=["supervised", "unconditional", "regression"],
+        required=True,
+    )
     p_eval.add_argument("eval_args", nargs=argparse.REMAINDER)
 
     p_preview = subparsers.add_parser(
@@ -72,7 +84,9 @@ def main() -> None:
         help="Render a single-slice low / recon / full figure from a test patient.",
     )
     p_preview.add_argument(
-        "--pipeline", choices=["supervised", "unconditional"], required=True
+        "--pipeline",
+        choices=["supervised", "unconditional", "regression"],
+        required=True,
     )
     p_preview.add_argument("preview_args", nargs=argparse.REMAINDER)
 
@@ -94,6 +108,11 @@ def main() -> None:
             from .train_supervised import train as train_fn
 
             cfg = SupervisedConfig()
+        elif args.pipeline == "regression":
+            from .config import RegressionUNetConfig, apply_smoke_overrides
+            from .train_regression import train as train_fn
+
+            cfg = RegressionUNetConfig()
         else:
             from .config import UnconditionalConfig, apply_smoke_overrides
             from .train_unconditional import train as train_fn
@@ -109,6 +128,8 @@ def main() -> None:
         # nested argparser sees just its own flags.
         if args.pipeline == "supervised":
             from .reconstruct_supervised import main as recon_main
+        elif args.pipeline == "regression":
+            from .reconstruct_regression import main as recon_main
         else:
             from .reconstruct_unconditional import main as recon_main
         sys.argv = [sys.argv[0], *(args.recon_args or [])]
