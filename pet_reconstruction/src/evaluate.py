@@ -31,12 +31,13 @@ import torch
 from diffusers import UNet2DModel
 from tqdm.auto import tqdm
 
-from .config import SupervisedConfig, UnconditionalConfig
+from .config import RegressionUNetConfig, SupervisedConfig, UnconditionalConfig
 from .metrics import (
     aggregate_volume_metrics,
     intensity_preservation,
     slice_metrics,
 )
+from .reconstruct_regression import regress_batch
 from .reconstruct_supervised import (
     _build_ddim_scheduler as _build_sched_sup,
     ddim_sample_conditional,
@@ -129,6 +130,9 @@ def evaluate_patient(
                 unet, scheduler, low_batch,
                 cfg.sample.num_inference_steps, cfg.sample.ddim_eta, device,
             )
+        elif pipeline == "regression":
+            # Baseline A: single forward pass, no iterative sampling.
+            recon = regress_batch(unet, low_batch)
         else:
             recon = ddim_dps_sample(
                 unet, scheduler, low_batch,
@@ -201,7 +205,9 @@ def _write_csv(rows: list[dict], path: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate a trained checkpoint on a held-out split.")
-    parser.add_argument("--pipeline", choices=["supervised", "unconditional"], required=True)
+    parser.add_argument(
+        "--pipeline", choices=["supervised", "unconditional", "regression"], required=True
+    )
     parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument(
         "--baseline",
@@ -240,6 +246,10 @@ def main() -> None:
     if args.pipeline == "supervised":
         cfg = SupervisedConfig()
         scheduler = _build_sched_sup(cfg)
+    elif args.pipeline == "regression":
+        # Baseline A: no diffusion, hence no scheduler and no sampling config.
+        cfg = RegressionUNetConfig()
+        scheduler = None
     else:
         cfg = UnconditionalConfig()
         if args.omega is not None:
@@ -323,8 +333,9 @@ def main() -> None:
         "n_slices": len(all_slice_rows),
         "config": {
             "image_size": cfg.data.image_size,
-            "num_inference_steps": cfg.sample.num_inference_steps,
-            "ddim_eta": cfg.sample.ddim_eta,
+            # The regression baseline has no SampleConfig (no iterative sampling).
+            "num_inference_steps": getattr(getattr(cfg, "sample", None), "num_inference_steps", None),
+            "ddim_eta": getattr(getattr(cfg, "sample", None), "ddim_eta", None),
             "seed": args.seed,
             "inference_batch_size": args.inference_batch_size,
             "dps_omega": cfg.sample.dps_omega if args.pipeline == "unconditional" else None,
