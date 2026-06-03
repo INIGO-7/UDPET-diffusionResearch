@@ -23,7 +23,7 @@ from pathlib import Path
 import numpy as np
 
 from .config import DataConfig
-from .splits import discover_patient_ids
+from .splits import discover_patient_ids, match_low_dose
 from .volume_io import (
     compute_foreground_bbox,
     compute_norm_percentile,
@@ -49,16 +49,27 @@ def _select_patient_ids(cfg: DataConfig, limit: int | None, patient_ids: list[st
     return discovered[:limit] if limit is not None else discovered
 
 
-def _preprocessed_full(cfg: DataConfig, patient_id: str) -> np.ndarray:
-    """Full-dose volume after the exact spatial steps preprocessing applies before M.
+def _preprocessed_volume(cfg: DataConfig, patient_id: str, is_low_dose: bool = False) -> np.ndarray:
+    """Full/low-dose volume after the exact spatial steps preprocessing applies before M.
 
-    bbox (on full dose) -> crop -> axial resize. Returns the (S, S, Z) array on which
+    bbox (on volume) -> crop -> axial resize. Returns the (S, S, Z) array on which
     compute_norm_percentile would run, so any M we compute here matches training.
     """
-    full_dose_dir = cfg.raw_dataset_dir / cfg.full_dose_subdir
-    full_vol, _, _ = load_volume(full_dose_dir / f"{patient_id}{cfg.full_suffix}")
-    bbox = compute_foreground_bbox(full_vol, threshold=cfg.foreground_threshold)
-    return resize_axial(crop_with_bbox(full_vol, bbox), cfg.image_size)
+    dose_folder = cfg.low_dose_subdir if is_low_dose else cfg.full_dose_subdir
+    dose_dir = cfg.raw_dataset_dir / dose_folder
+    path = ""
+
+    if is_low_dose:
+        path = match_low_dose(patient_id, dose_dir, cfg.low_suffix_variants)
+    else:
+        path = dose_dir / f"{patient_id}{cfg.full_suffix}"
+
+    if not path or not Path(path).exists():
+        raise FileNotFoundError(f"Volume not found: {path}")
+
+    volume, _, _ = load_volume(path)
+    bbox = compute_foreground_bbox(volume, threshold=cfg.foreground_threshold)
+    return resize_axial(crop_with_bbox(volume, bbox), cfg.image_size)
 
 
 # ---------------------------------------------------------------------------
@@ -78,9 +89,11 @@ def exp_norm_percentile(args: argparse.Namespace) -> None:
     default_p = cfg.norm_percentile
     percentiles = sorted(set(args.percentiles + [default_p]))
     pids = _select_patient_ids(cfg, args.limit, args.patient_id)
+    is_low_dose = args.low_dose
 
     print(f"asinh normalization percentile sweep (default = {default_p})")
     print(f"volumes analyzed: {len(pids)}  |  image_size={cfg.image_size}\n")
+    print(f"Volume dosage analyzed: {"LOW" if is_low_dose else "FULL"} dose volumes.")
 
     # Per-volume z-profiles of the voxels newly clipped when going default -> lowest p,
     # accumulated as a list of (Z,) arrays normalized to slice position in [0, 1].
@@ -91,18 +104,18 @@ def exp_norm_percentile(args: argparse.Namespace) -> None:
 
     for pid in pids:
         try:
-            full_resized = _preprocessed_full(cfg, pid)
+            volume_resized = _preprocessed_volume(cfg, pid, is_low_dose)
         except FileNotFoundError as exc:
             print(f"[skip] {pid}: {exc}")
             continue
 
-        fg_mask = full_resized > 0
-        fg = full_resized[fg_mask]
+        fg_mask = volume_resized > 0
+        fg = volume_resized[fg_mask]
         if fg.size == 0:
             print(f"[skip] {pid}: empty foreground")
             continue
 
-        M = {p: compute_norm_percentile(full_resized, p) for p in percentiles}
+        M = {p: compute_norm_percentile(volume_resized, p) for p in percentiles}
         M_default = M[default_p]
 
         print(f"  {pid}  (foreground voxels: {fg.size:,})")
@@ -117,7 +130,7 @@ def exp_norm_percentile(args: argparse.Namespace) -> None:
         # Voxels with M_lowest < value <= M_default: these are IN-range today but get
         # pushed above +1 if we adopt the lowest percentile. This is the "real signal lost".
         if lowest_p < default_p:
-            newly = (full_resized > M[lowest_p]) & (full_resized <= M_default)
+            newly = (volume_resized > M[lowest_p]) & (volume_resized <= M_default)
             z_counts = newly.sum(axis=(0, 1)).astype(np.float64)  # (Z,)
             z_pos = np.linspace(0.0, 1.0, num=z_counts.shape[0])
             additional_z_profiles.append((z_pos, z_counts))
@@ -182,6 +195,7 @@ def main() -> None:
         "norm-percentile",
         help="How much real foreground gets pushed above +1 as M's percentile is lowered.",
     )
+    p_norm.add_argument("--low-dose", action="store_true", help="Use the low dose images instead of default full-dose")
     p_norm.add_argument(
         "--percentiles",
         type=float,
