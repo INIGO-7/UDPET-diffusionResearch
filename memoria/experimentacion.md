@@ -3,15 +3,25 @@
 
 ### Supervisado
 
+***epoch 50***
+- "psnr_fg": 29.941329540122112,
+- "psnr_whole": 34.524634523543476,
+- "ssim_fg": 0.9638390274204348,
+- "ssim_whole": 0.9206913763098331,
+- "nrmse_fg": 0.03750145999946974,
+- "nrmse_whole": 0.02126243088470933,
+- "mean_pct_err": -4.177727755669889,
+- "max_pct_err": -14.644118229392996
 
-
-## Métricas
-
-PSNR/SSIM/NRMSE evalúan la fidelidad estructural, y se miden sobre el espacio normalizado de las imágenes: esto se debe a que PSNR colapsa al voxel más brillante, las muestras de PET tienen un altísimo rango dinámico, entonces el PSNR es prácticamente una evaluación de cómo de bien se ha podido reproducir el spot más brillante, y es numéricamente insensible a los errores en el resto de la imagen. En el SSIM, los datos atípicos en la imagen harían que nos diera un SSIM más alto de lo debido. Además, la media a lo largo de todos los pacientes necesita una escala común, para que los cálculos intra-volumen sean justos y precisos. 
-
-La reformulación crucial: asinh es monótonica e invertible — la misma transformación aplicada tanto a recon como a GT. No oculta el error; lo repondera para que los errores relativos en todo el rango dinámico cuenten en lugar de los errores absolutos en el pico. Entonces PSNR/SSIM en espacio normalizado es una comparación fiel del resultado final sin transformaciones — simplemente bajo una ponderación de intensidad donde la métrica no está rota.
-
-Utilizamos el count-space para evaluar intensidad cuantitativa.
+***epoch 100***
+- "psnr_fg": 30.204600212528327,
+- "psnr_whole": 35.31630623781877,
+- "ssim_fg": 0.9651728881635684
+- "ssim_whole": 0.9251425834803598,
+- "nrmse_fg": 0.03639723158958674,
+- "nrmse_whole": 0.019435456209188604,
+- "mean_pct_err": -4.749601186820047,
+- "max_pct_err": -18.473233750199388,
 
 ## Limitaciones
 

@@ -26,6 +26,14 @@ Visto esto, se aprecia que el percentil escogido como por defecto deja pocos val
 
 El tamaño de imagen con el que se trabaja es $256^2$, lo cuál hace que la imagen resultante sea más pequeña, dado que la original es de 440x440 píxeles. La duda surge: que pasaría si entrenamos el modelo buscando la máxima calidad, utilizando el tamaño original de las imágenes? Para empezar, no podemos usar $440^2$ dado que nuestra arquitectura U-net tiene 6 bloques, es decir hace down/upsample 5 veces: $2^5 = 32$; por lo tanto el tamaño de imagen entrante tiene que ser divisible entre 32. Aún así, se podría escoger un tamaño como $384$ o $416$, tamaños más cercanos a la calidad original que sí que cumplen con este requisito de ser divisible entre 32. No se ha podido probar con estas configuraciones dado el alcance del proyecto y, mayormente, el coste que viene con ejecutar el entrenamiento utilizando imágenes más grandes: ya es costoso para $256^2$, si subimos la calidad el coste de cualquier parte del entrenamiento crece aproximadamente de forma cuadrática.
 
+## Métricas
+
+PSNR/SSIM/NRMSE evalúan la fidelidad estructural, y se miden sobre el espacio normalizado de las imágenes: esto se debe a que PSNR colapsa al voxel más brillante, las muestras de PET tienen un altísimo rango dinámico, entonces el PSNR es prácticamente una evaluación de cómo de bien se ha podido reproducir el spot más brillante, y es numéricamente insensible a los errores en el resto de la imagen. En el SSIM, los datos atípicos en la imagen harían que nos diera un SSIM más alto de lo debido. Además, la media a lo largo de todos los pacientes necesita una escala común, para que los cálculos intra-volumen sean justos y precisos. 
+
+La reformulación crucial: asinh es monótonica e invertible — la misma transformación aplicada tanto a recon como a GT. No oculta el error; lo repondera para que los errores relativos en todo el rango dinámico cuenten en lugar de los errores absolutos en el pico. Entonces PSNR/SSIM en espacio normalizado es una comparación fiel del resultado final sin transformaciones — simplemente bajo una ponderación de intensidad donde la métrica no está rota.
+
+Utilizamos el count-space para evaluar intensidad cuantitativa.
+
 ## Workflow completo de entrenamiento
 
 [TODO - mirar cuánto de esto ya está escrito en la memoria]
