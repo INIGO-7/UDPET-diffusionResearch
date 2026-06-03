@@ -58,6 +58,8 @@ Para una validación rápida del pipeline completo (~1 h), añade `--smoke` a `p
 
 Convierte cada par NIfTI (full / 1-20) en cortes 2D normalizados (asinh, recortados al bbox de foreground, redimensionados a `image_size`²) guardados como `.pt` float16. Escribe también `metadata.json` con bbox, índices conservados, afín original y constantes de normalización por volumen.
 
+**Importante (sin fuga de full-dose):** la geometría y la normalización —bbox de foreground, escala asinh `M` (percentil 99.5) y filtro de cortes— se derivan **únicamente del volumen de baja dosis** (lo único disponible en inferencia real) y se aplican idénticamente al target de dosis completa. La lógica vive en `prepare_low_dose()` (en `preprocess.py`), que es la **única fuente de verdad** compartida con la reconstrucción, de modo que la normalización de entrenamiento y la de inferencia coinciden exactamente.
+
 ```bash
 python -m src.main preprocess              # todo el dataset
 python -m src.main preprocess --limit 50   # solo los primeros 50 pacientes
@@ -91,7 +93,9 @@ Configuración por defecto (en `src/config.py`): batch 32, 100 epochs, `v_predic
 
 ### 2.3 `reconstruct` — generar volúmenes NIfTI a partir de un checkpoint
 
-Lee los cortes cacheados de baja dosis del split solicitado, los muestrea con DDIM-50 y reensambla un volumen en la rejilla original (deshace asinh → resize inverso → vuelve al bbox), guardándolo como NIfTI con el afín original.
+Lee el **NIfTI de baja dosis crudo** de cada paciente del split solicitado y deriva en **tiempo de ejecución** (vía `prepare_low_dose`) el bbox, la escala asinh `M` y los cortes conservados a partir de ese volumen —**no usa la caché ni `metadata.json`**—. Muestrea con DDIM-50 y reensambla un volumen en la rejilla original (deshace asinh → resize inverso → vuelve al bbox), guardándolo como NIfTI con el afín del propio volumen de entrada.
+
+Como todo se calcula en runtime desde la baja dosis, `reconstruct` funciona también sobre un **volumen no visto** que no haya pasado por el preprocesado, mediante `--low-volume`.
 
 ```bash
 python -m src.main reconstruct --pipeline supervised \
@@ -101,6 +105,11 @@ python -m src.main reconstruct --pipeline unconditional \
     --checkpoint checkpoints/unconditional/checkpoint-epoch-029 \
     --output-dir reconstructions/unconditional/ \
     --split test --limit 5 --inference-batch-size 8 --omega 1.5
+
+# Reconstruir directamente un volumen de baja dosis no visto (sin caché ni split):
+python -m src.main reconstruct --pipeline supervised \
+    --checkpoint checkpoints/supervised/checkpoint-epoch-029 \
+    --low-volume /ruta/a/paciente_1-20\ dose.nii.gz
 ```
 
 Flags pass-through al script interno:
@@ -108,14 +117,15 @@ Flags pass-through al script interno:
 - `--output-dir PATH` (default `reconstructions/{pipeline}`).
 - `--split {train,val,test}` (default `test`).
 - `--limit N`: solo los primeros N pacientes.
+- `--low-volume PATH`: reconstruye un único NIfTI de baja dosis crudo (volumen no visto); ignora `--split`, `--limit` y la caché.
 - `--inference-batch-size` (default 4).
 - `--omega FLOAT` (solo `unconditional`): sobreescribe la escala de guiado DPS.
 
-Salida: `<output-dir>/<patient_id>_recon.nii.gz`.
+Salida: `<output-dir>/<patient_id>_recon.nii.gz`. **Requiere los NIfTI de baja dosis crudos** disponibles (en `res/dataset/...` para el modo por split, o la ruta dada en `--low-volume`).
 
 ### 2.4 `evaluate` — métricas + figuras sobre un split
 
-Para cada paciente del split: corre inferencia, calcula PSNR / SSIM / NRMSE (whole y foreground) en espacio normalizado, invierte el asinh y calcula métricas de preservación de intensidad en espacio de cuentas, y guarda figuras de 4 paneles para una muestra representativa de pacientes.
+Para cada paciente del split: corre inferencia, calcula PSNR / SSIM / NRMSE (whole y foreground) en espacio normalizado, invierte el asinh y calcula métricas de preservación de intensidad en espacio de cuentas, y guarda figuras de 4 paneles para una muestra representativa de pacientes. La escala `M` para invertir el asinh se estima **en runtime** del volumen de baja dosis crudo (no se lee de `metadata.json`), igual que en `reconstruct`; por tanto evaluate necesita tanto la caché (ground-truth de dosis completa) como los NIfTI de baja dosis crudos.
 
 ```bash
 python -m src.main evaluate --pipeline supervised \
@@ -234,7 +244,8 @@ pet_reconstruction/
 ## 6. Convenciones rápidas
 
 - **Espacio de trabajo del modelo**: cortes 2D, normalizados con asinh por volumen al rango ~[-1, +1].
-- **Espacio de evaluación de intensidad**: cuentas PET originales (se invierte el asinh con `M` y `k` guardados en `metadata.json`).
+- **Normalización sin fuga**: la escala `M`, el bbox y el filtro de cortes se derivan **solo de la baja dosis** (`prepare_low_dose`), nunca de la dosis completa. En inferencia (`reconstruct`/`evaluate`) `M` se **recalcula en runtime** desde el volumen de baja dosis, no se lee de `metadata.json` —así un volumen no visto funciona igual—. El `metadata.json` sigue guardando estos valores (idénticos a los de runtime) para el entrenamiento y para análisis.
+- **Espacio de evaluación de intensidad**: cuentas PET originales (se invierte el asinh con esa misma `M` de baja dosis y `k`).
 - **Split test**: blindado contra preview/entrenamiento; `preview` se niega a procesar pacientes fuera de test.
 - **Checkpoints**: cada uno es un directorio con `unet/` (pesos) y `scheduler/` (config del scheduler). Apunta a ese directorio en los flags `--checkpoint`.
 - **Reproducibilidad**: `split_seed=0` en `DataConfig`, `seed=0` en `TrainConfig`. Cambia en `config.py` si necesitas otra partición.
