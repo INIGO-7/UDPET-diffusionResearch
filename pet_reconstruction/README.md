@@ -5,6 +5,7 @@ Reconstrucción de PET de dosis completa a partir de PET de baja dosis (1/20) me
 - **`supervised`** (Pipeline A): UNet condicionado por concatenación de canales (entrada = ruido ⊕ corte de baja dosis), muestreo DDIM.
 - **`unconditional`** (Pipeline B): UNet incondicional + guiado por **DPS** (Diffusion Posterior Sampling) usando el corte de baja dosis como medida.
 - **`regression`** (Línea base A): la *misma* UNet del pipeline supervisado pero **sin difusión** — entrada = corte de baja dosis (1 canal), objetivo MSE en el espacio asinh `[-1,1]`, inferencia de una sola pasada. Ablación controlada del paradigma de difusión: misma arquitectura, mismos datos y presupuesto que Pipeline A, sólo cambia el proceso generativo.
+- **`cnn`** (Línea base B): **RED-CNN** (Chen et al. 2017), la CNN de referencia para *denoising* de CT/PET de baja dosis (~1.8 M parámetros, ~50× menor que la UNet). Mismo entrenamiento que la línea base A; aísla la *familia arquitectónica* en vez del paradigma. Salida lineal (sin la ReLU final del original, ya que el espacio asinh es con signo y el fondo vive en −1).
 
 Todos los comandos se ejecutan **desde la carpeta `pet_reconstruction/`** y usan el dispatcher `python -m src.main <subcomando>` (o directamente el módulo correspondiente cuando se quieren más flags).
 
@@ -79,17 +80,18 @@ Salida: `data/pet_cache/{patient_id}/{full,low}/NNNN.pt` y `data/pet_cache/metad
 python -m src.main train --pipeline supervised
 python -m src.main train --pipeline unconditional
 python -m src.main train --pipeline regression          # línea base A (UNet sin difusión)
+python -m src.main train --pipeline cnn                  # línea base B (RED-CNN)
 python -m src.main train --pipeline supervised --resume-from latest
 python -m src.main train --pipeline supervised --resume-from checkpoint-epoch-019
-python -m src.main train --pipeline regression --smoke
+python -m src.main train --pipeline cnn --smoke
 ```
 
 Flags:
-- `--pipeline {supervised, unconditional, regression}` (obligatorio).
+- `--pipeline {supervised, unconditional, regression, cnn}` (obligatorio).
 - `--smoke`: shrink rápido (resolución 128², 5 epochs, checkpoint por epoch).
 - `--resume-from`: reanuda entrenamiento. `latest` selecciona el `checkpoint-epoch-*` más reciente bajo el directorio del pipeline; alternativamente, el nombre exacto del subdirectorio.
 
-Salida: `checkpoints/{supervised|unconditional|regression_unet}/checkpoint-epoch-NNN/`. Los pipelines de difusión guardan subcarpetas `unet/` y `scheduler/`; la línea base `regression` guarda sólo `unet/` (no hay scheduler de ruido). Cada `save_model_epochs` epochs se guarda también una previsualización de reconstrucciones de ejemplo en TensorBoard.
+Salida: `checkpoints/{supervised|unconditional|regression_unet|cnn_redcnn}/checkpoint-epoch-NNN/`. Los pipelines de difusión guardan subcarpetas `unet/` y `scheduler/`; la línea base `regression` guarda sólo `unet/`; la línea base `cnn` guarda un `model.pt` (state dict; RED-CNN no es un modelo `diffusers`). Cada `save_model_epochs` epochs se guarda también una previsualización de reconstrucciones de ejemplo en TensorBoard.
 
 Configuración por defecto (en `src/config.py`): batch 32, 100 epochs, `v_prediction`, schedule cosine, EMA 0.9999, bf16, lr 1.4e-4 con warmup. Si entrenas en MPS/CPU, ajusta `train_batch_size`, `gradient_accumulation_steps` y `mixed_precision` siguiendo las notas del fichero.
 
@@ -192,9 +194,11 @@ python -m src.preprocess [--limit N] [--smoke]
 python -m src.train_supervised        # equivalente al dispatcher pero sin smoke/resume helpers
 python -m src.train_unconditional
 python -m src.train_regression            # línea base A (UNet sin difusión)
+python -m src.train_cnn                    # línea base B (RED-CNN)
 python -m src.reconstruct_supervised      --checkpoint ... [flags]
 python -m src.reconstruct_unconditional   --checkpoint ... [flags]
 python -m src.reconstruct_regression      --checkpoint ... [flags]
+python -m src.reconstruct_cnn             --checkpoint ... [flags]
 python -m src.evaluate                    --pipeline ... --checkpoint ... --output-dir ...
 python -m src.preview_reconstruction      --pipeline ... [flags]
 ```
