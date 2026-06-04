@@ -47,7 +47,7 @@ def main() -> None:
     p_train = subparsers.add_parser("train", help="Train one of the pipelines.")
     p_train.add_argument(
         "--pipeline",
-        choices=["supervised", "unconditional", "regression"],
+        choices=["supervised", "unconditional", "regression", "cnn"],
         required=True,
     )
     p_train.add_argument("--smoke", action="store_true")
@@ -63,7 +63,7 @@ def main() -> None:
     )
     p_recon.add_argument(
         "--pipeline",
-        choices=["supervised", "unconditional", "regression"],
+        choices=["supervised", "unconditional", "regression", "cnn"],
         required=True,
     )
     # The remaining flags are passed through to the per-pipeline reconstruct script.
@@ -74,7 +74,7 @@ def main() -> None:
     )
     p_eval.add_argument(
         "--pipeline",
-        choices=["supervised", "unconditional", "regression"],
+        choices=["supervised", "unconditional", "regression", "cnn"],
         required=True,
     )
     p_eval.add_argument("eval_args", nargs=argparse.REMAINDER)
@@ -85,7 +85,7 @@ def main() -> None:
     )
     p_preview.add_argument(
         "--pipeline",
-        choices=["supervised", "unconditional", "regression"],
+        choices=["supervised", "unconditional", "regression", "cnn"],
         required=True,
     )
     p_preview.add_argument("preview_args", nargs=argparse.REMAINDER)
@@ -113,6 +113,11 @@ def main() -> None:
             from .train_regression import train as train_fn
 
             cfg = RegressionUNetConfig()
+        elif args.pipeline == "cnn":
+            from .config import CNNConfig, apply_smoke_overrides
+            from .train_cnn import train as train_fn
+
+            cfg = CNNConfig()
         else:
             from .config import UnconditionalConfig, apply_smoke_overrides
             from .train_unconditional import train as train_fn
@@ -130,6 +135,8 @@ def main() -> None:
             from .reconstruct_supervised import main as recon_main
         elif args.pipeline == "regression":
             from .reconstruct_regression import main as recon_main
+        elif args.pipeline == "cnn":
+            from .reconstruct_cnn import main as recon_main
         else:
             from .reconstruct_unconditional import main as recon_main
         sys.argv = [sys.argv[0], *(args.recon_args or [])]

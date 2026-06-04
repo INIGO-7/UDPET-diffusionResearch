@@ -30,7 +30,14 @@ from pathlib import Path
 import torch
 from diffusers import UNet2DModel
 
-from .config import RegressionUNetConfig, SupervisedConfig, UnconditionalConfig
+from .config import (
+    CNNConfig,
+    RegressionUNetConfig,
+    SupervisedConfig,
+    UnconditionalConfig,
+)
+from .model_cnn import load_redcnn
+from .reconstruct_cnn import redcnn_batch
 from .reconstruct_regression import regress_batch
 from .reconstruct_supervised import (
     _build_ddim_scheduler as _build_sched_sup,
@@ -92,7 +99,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--pipeline",
-        choices=["supervised", "unconditional", "regression"],
+        choices=["supervised", "unconditional", "regression", "cnn"],
         required=True,
     )
     parser.add_argument(
@@ -135,6 +142,8 @@ def main() -> None:
         cfg = SupervisedConfig()
     elif args.pipeline == "regression":
         cfg = RegressionUNetConfig()
+    elif args.pipeline == "cnn":
+        cfg = CNNConfig()
     else:
         cfg = UnconditionalConfig()
         if args.omega is not None:
@@ -180,13 +189,18 @@ def main() -> None:
 
     device = _pick_device()
     print(f"Loading checkpoint from {args.checkpoint} (device={device})")
-    unet = UNet2DModel.from_pretrained(args.checkpoint / "unet").to(device).eval()
-    if args.pipeline == "supervised":
-        scheduler = _build_sched_sup(cfg)
-    elif args.pipeline == "regression":
+    if args.pipeline == "cnn":
+        model = load_redcnn(cfg, args.checkpoint, device)
         scheduler = None
     else:
-        scheduler = _build_sched_unc(cfg)
+        model = UNet2DModel.from_pretrained(args.checkpoint / "unet").to(device).eval()
+        if args.pipeline == "supervised":
+            scheduler = _build_sched_sup(cfg)
+        elif args.pipeline == "regression":
+            scheduler = None
+        else:
+            scheduler = _build_sched_unc(cfg)
+    unet = model  # alias kept for the diffusion sampling branches below
 
     low_t = _load_slice(low_path)
     full_t = _load_slice(full_path)
@@ -208,6 +222,12 @@ def main() -> None:
         )
         with torch.no_grad():
             recon = regress_batch(unet, low_batch)
+    elif args.pipeline == "cnn":
+        print(
+            f"RED-CNN forward on slice {full_path.stem} of {args.patient_id} "
+            f"(single forward pass)..."
+        )
+        recon = redcnn_batch(unet, low_batch)
     else:
         print(
             f"Sampling slice {full_path.stem} of {args.patient_id} "

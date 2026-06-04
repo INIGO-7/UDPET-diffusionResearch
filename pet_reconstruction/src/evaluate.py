@@ -31,12 +31,19 @@ import torch
 from diffusers import UNet2DModel
 from tqdm.auto import tqdm
 
-from .config import RegressionUNetConfig, SupervisedConfig, UnconditionalConfig
+from .config import (
+    CNNConfig,
+    RegressionUNetConfig,
+    SupervisedConfig,
+    UnconditionalConfig,
+)
 from .metrics import (
     aggregate_volume_metrics,
     intensity_preservation,
     slice_metrics,
 )
+from .model_cnn import load_redcnn
+from .reconstruct_cnn import redcnn_batch
 from .reconstruct_regression import regress_batch
 from .reconstruct_supervised import (
     _build_ddim_scheduler as _build_sched_sup,
@@ -133,6 +140,9 @@ def evaluate_patient(
         elif pipeline == "regression":
             # Baseline A: single forward pass, no iterative sampling.
             recon = regress_batch(unet, low_batch)
+        elif pipeline == "cnn":
+            # Baseline B: RED-CNN, single forward pass.
+            recon = redcnn_batch(unet, low_batch)
         else:
             recon = ddim_dps_sample(
                 unet, scheduler, low_batch,
@@ -206,7 +216,9 @@ def _write_csv(rows: list[dict], path: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate a trained checkpoint on a held-out split.")
     parser.add_argument(
-        "--pipeline", choices=["supervised", "unconditional", "regression"], required=True
+        "--pipeline",
+        choices=["supervised", "unconditional", "regression", "cnn"],
+        required=True,
     )
     parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument(
@@ -250,6 +262,10 @@ def main() -> None:
         # Baseline A: no diffusion, hence no scheduler and no sampling config.
         cfg = RegressionUNetConfig()
         scheduler = None
+    elif args.pipeline == "cnn":
+        # Baseline B: RED-CNN, also no diffusion.
+        cfg = CNNConfig()
+        scheduler = None
     else:
         cfg = UnconditionalConfig()
         if args.omega is not None:
@@ -270,6 +286,9 @@ def main() -> None:
     if args.baseline:
         print(f"Identity baseline mode (no model) — device={device}")
         unet = None
+    elif args.pipeline == "cnn":
+        print(f"Loading RED-CNN checkpoint from {args.checkpoint} (device={device})")
+        unet = load_redcnn(cfg, args.checkpoint, device)
     else:
         print(f"Loading checkpoint from {args.checkpoint} (device={device})")
         unet = UNet2DModel.from_pretrained(args.checkpoint / "unet").to(device).eval()
