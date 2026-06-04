@@ -73,7 +73,7 @@ class TrainConfig:
     # Tuned for a single 32 GB CUDA GPU (RTX PRO 4500 Blackwell). On MPS, drop
     # train_batch_size to 4, set gradient_accumulation_steps to 4, and switch
     # mixed_precision back to "no".
-    train_batch_size: int = 8
+    train_batch_size: int = 4
     gradient_accumulation_steps: int = 4  # effective batch size = 32
     num_epochs: int = 100
     # Scaled ~sqrt(32/16) from the original 1e-4 baseline to track the larger batch.
@@ -89,8 +89,8 @@ class TrainConfig:
     mixed_precision: str = "bf16"
 
     # --- DataLoader ---
-    num_workers: int = 16
-    pin_memory: bool = True
+    num_workers: int = 4
+    pin_memory: bool = False
 
     # --- Checkpointing / logging ---
     save_model_epochs: int = 10
@@ -137,6 +137,40 @@ class RegressionUNetConfig:
     output_subdir: str = "regression_unet"
     data: DataConfig = field(default_factory=DataConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
+    train: TrainConfig = field(default_factory=TrainConfig)
+
+
+@dataclass
+class REDCNNModelConfig:
+    """Architecture of RED-CNN (Chen et al. 2017).
+
+    A fully-convolutional residual encoder-decoder: 5 conv + 5 deconv layers,
+    `num_filters` channels, `kernel_size` kernels, stride 1, NO pooling (operates
+    at full resolution), with symmetric residual skip connections. The canonical
+    setup is 96 filters and 5x5 kernels. Unlike ModelConfig (the diffusion U-Net),
+    there is no downsampling, no attention and no time embedding.
+    """
+
+    num_filters: int = 96
+    kernel_size: int = 5
+
+
+@dataclass
+class CNNConfig:
+    """Baseline B — RED-CNN, a classic CNN denoiser for low-dose CT/PET.
+
+    A much smaller, established discriminative architecture (~1.8 M parameters vs
+    the U-Net's ~10^8). Trained identically to Baseline A — same paired data, same
+    MSE objective in the asinh [-1, 1] model space, same training budget — so it
+    isolates the *architecture family* rather than the diffusion paradigm.
+    """
+
+    pipeline: str = "cnn"
+    in_channels: int = 1   # low-dose only
+    out_channels: int = 1  # full-dose estimate
+    output_subdir: str = "redcnn"
+    data: DataConfig = field(default_factory=DataConfig)
+    model: REDCNNModelConfig = field(default_factory=REDCNNModelConfig)
     train: TrainConfig = field(default_factory=TrainConfig)
 
 
