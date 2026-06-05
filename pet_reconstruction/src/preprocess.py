@@ -103,14 +103,12 @@ def preprocess_volume(
 
     for z in kept_indices:
         idx_str = f"{z:04d}"
-        torch.save(
-            torch.from_numpy(full_norm[:, :, z]).to(torch.float16),
-            full_cache / f"{idx_str}.pt",
-        )
-        torch.save(
-            torch.from_numpy(low_norm[:, :, z]).to(torch.float16),
-            low_cache / f"{idx_str}.pt",
-        )
+        full_pt = full_cache / f"{idx_str}.pt"
+        low_pt = low_cache / f"{idx_str}.pt"
+        if full_pt.exists() and low_pt.exists():
+            continue
+        torch.save(torch.from_numpy(full_norm[:, :, z]).to(torch.float16), full_pt)
+        torch.save(torch.from_numpy(low_norm[:, :, z]).to(torch.float16), low_pt)
 
     return {
         "patient_id": patient_id,
@@ -139,14 +137,24 @@ def preprocess_all(cfg: DataConfig | None = None, limit: int | None = None) -> N
     if limit is not None:
         patient_ids = patient_ids[:limit]
 
+    # Resume support: load any metadata from a previous (possibly interrupted) run
+    # and skip volumes already fully cached. metadata.json is rewritten after every
+    # volume so an interrupted run never loses completed work.
+    metadata_path = cfg.cache_dir / "metadata.json"
     metadata: dict[str, dict] = {}
+    if metadata_path.exists():
+        metadata = json.loads(metadata_path.read_text())
+        print(f"Resuming: {len(metadata)} volumes already in metadata.json")
+
     for pid in tqdm(patient_ids, desc="Preprocessing volumes"):
+        if pid in metadata:
+            continue
         try:
             metadata[pid] = preprocess_volume(pid, full_dose_dir, low_dose_dir, cfg.cache_dir, cfg)
+            metadata_path.write_text(json.dumps(metadata, indent=2))
         except FileNotFoundError as exc:
             print(f"[skip] {pid}: {exc}")
 
-    (cfg.cache_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
     print(f"Cached {len(metadata)} volumes to {cfg.cache_dir}")
 
     # Splits are derived from the FULL patient pool (not just `limit`d subset) so the
