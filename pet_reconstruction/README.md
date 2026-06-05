@@ -205,17 +205,24 @@ python -m src.preview_reconstruction      --pipeline ... [flags]
 
 ---
 
-## 4. Utilidad extra: visualizador NIfTI
+## 4. Utilidades extra: visualizadores NIfTI
 
-Inspeccionar pares dose_Full / dose_20 del dataset crudo con sliders sincronizados en los tres planos ortogonales:
+**Dataset crudo** — inspeccionar pares dose_Full / dose_20 con sliders sincronizados en los tres planos ortogonales:
 
 ```bash
-python -m src.visualize_nifti                                # primer par del dataset
-python -m src.visualize_nifti <prefijo>                      # ej. 01122021_1_20211201_164050
-python -m src.visualize_nifti <ruta_full> <ruta_20>          # rutas explícitas
+python -m src.visualize_dataset                              # primer par del dataset
+python -m src.visualize_dataset <prefijo>                    # ej. 01122021_1_20211201_164050
+python -m src.visualize_dataset <ruta_full> <ruta_20>        # rutas explícitas
 ```
 
-No requiere preprocesado: trabaja sobre los `.nii.gz` originales.
+**Reconstrucciones de un experimento** — comparar 1/20 dose / reconstrucción / full dose (tres filas, tres planos) y métricas de volumen (PSNR/SSIM/NRMSE) de la reconstrucción frente al baseline (1/20 sin reconstruir), ambos contra la dosis completa. El argumento es el nombre del experimento, es decir el subdirectorio bajo `reconstructions/`:
+
+```bash
+python -m src.visualize_reconstruction supervised_epoch99            # todos los volúmenes del experimento
+python -m src.visualize_reconstruction supervised_epoch99 <prefijo>  # un volumen concreto primero
+```
+
+Ninguno requiere preprocesado: trabajan sobre los `.nii.gz` originales (y, en el segundo caso, sobre los `*_recon.nii.gz` ya generados por `reconstruct`).
 
 ---
 
@@ -243,7 +250,8 @@ pet_reconstruction/
     ├── evaluate.py            métricas + figuras 4-panel
     ├── metrics.py             PSNR/SSIM/NRMSE, intensity preservation
     ├── visualize.py           figuras 3-panel y 4-panel
-    ├── visualize_nifti.py     visor interactivo de NIfTI crudo
+    ├── visualize_dataset.py   visor interactivo del dataset crudo (full vs 1/20)
+    ├── visualize_reconstruction.py  visor de reconstrucciones + métricas por experimento
     └── preview_reconstruction.py     comparación de un corte
 ```
 
