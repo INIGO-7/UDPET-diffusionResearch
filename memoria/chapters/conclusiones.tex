@@ -9,7 +9,7 @@
 
 \todo{Recapitular brevemente: revisión de fundamentos teóricos
 de los modelos de difusión, experimento controlado con mariposas,
-diseño e implementación del MVP de reconstrucción PET en dos
+diseño e implementación del sistema de reconstrucción PET en dos
 \textit{pipelines} (supervisado condicional y prior no
 condicional con DPS), evaluación sobre el conjunto de test.}
 
@@ -25,11 +25,48 @@ condicional con guiado.}
 \todo{Mostrar los volúmenes NIfTI reconstruídos completamente
 por el pipeline de difusión, y compararlos con los volúmenes 3d originales}
 
+\section{Limitaciones}
+\label{sec:limitaciones}
+
+La mayor limitación del proyecto es la combinación entre la
+demanda de máquinas de alto rendimiento para la experimentación y
+la amplitud del espacio de experimentos posibles. Este espacio
+abarca desde los parámetros del paradigma de entrenamiento
+(tamaño de imagen, tasa de aprendizaje, estabilización numérica),
+pasando por las decisiones de tratamiento de las imágenes médicas
+(normalización, recorte, filtrado de \textit{slices}), hasta las
+elecciones de arquitectura (DDIM frente a DDPM, U-Net con
+atención, guiado DPS, imitación explícita del ruido de dosis
+baja, etc.). Combinado con los límites de hardware, que solo
+permiten realizar un número acotado de experimentos, esto ha sido
+el mayor reto del trabajo. Se ha mitigado mediante una revisión
+del estado del arte exhaustiva, de la que se han extraído las
+ideas más prometedoras de la literatura reciente del dominio; sin
+ella habría sido muy difícil llegar a tiempo, pues habría hecho
+falta una experimentación mucho mayor para determinar qué funciona,
+qué no, y dónde se rompe la arquitectura.
+
+Una segunda limitación es el tiempo de reconstrucción de un
+volumen NIfTI en inferencia. Tras entrenar el modelo supervisado
+hasta el final (100 épocas) y reconstruir volúmenes localmente en
+un MacBook Pro M4 Pro de 24~GB con un \textit{batch} de inferencia
+de 8, el tiempo de reconstrucción de un volumen completo es de
+aproximadamente una hora. Esto dificulta integrar el sistema
+directamente en una máquina de escaneo, tanto por los
+requerimientos computacionales como por el tiempo de procesado.
+De cara a un entorno clínico real, una arquitectura factible sería
+adquirir el escaneo de dosis baja en la propia máquina y enviar
+los volúmenes en lotes a la nube, donde se procesarían de forma
+concurrente sobre sistemas de alto rendimiento. Esta solución
+mantendría intacta la premisa del proyecto: obtener escaneos
+equivalentes a los de dosis completa de radiación empleando una
+vigésima parte de la dosis.
+
 \section{Líneas de desarrollo futuro}
 \label{sec:lineas-futuras}
 
 Se identifican cinco extensiones, ordenadas por proximidad a la
-implementación del MVP.
+implementación actual.
 
 \begin{enumerate}[leftmargin=*]
     \item \textbf{DPS con $\sigma(\mathbf{y})$ dependiente de la

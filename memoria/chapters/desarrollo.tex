@@ -4,6 +4,197 @@
 \chapter{Marco teórico: fundamentos de los modelos de difusión}
 \label{cap:marco-teorico}
 
+% ---------------------------------------------------------------------
+\section{¿Qué es un modelo de difusión?}
+\label{sec:que-es-difusion}
+
+Un \emph{modelo de difusión} es un modelo generativo probabilístico
+que aprende a producir muestras nuevas de una distribución de datos
+$p(x)$ invirtiendo, paso a paso, un proceso de corrupción gradual.
+La idea central es deliberadamente sencilla: si se sabe cómo destruir
+la estructura de un dato añadiéndole ruido de forma progresiva hasta
+convertirlo en ruido puro, entonces aprender a \emph{deshacer} cada
+uno de esos pasos equivale a aprender a \emph{crear} datos a partir de
+ruido. El modelo se entrena, por tanto, no para describir
+explícitamente la distribución $p(x)$ —algo intratable para datos de
+alta dimensión como las imágenes— sino para revertir un proceso de
+difusión conocido.
+
+Conviene fijar desde el principio los dos ingredientes que
+reaparecerán a lo largo de todo el capítulo:
+
+\begin{itemize}
+    \item El \textbf{proceso hacia delante} (\textit{forward} o
+    \textit{diffusion process}): una cadena fija, sin parámetros
+    entrenables, que añade ruido gaussiano a un dato $x_0$ a lo largo
+    de $T$ pasos hasta que $x_T$ es indistinguible de una muestra de
+    $\mathcal{N}(0,\mathbf{I})$.
+    \item El \textbf{proceso hacia atrás} (\textit{reverse} o
+    \textit{denoising process}): la cadena que queremos aprender, en
+    la que una red neuronal con parámetros $\theta$ estima cómo
+    eliminar el ruido en cada paso para reconstruir progresivamente
+    una muestra de datos a partir de ruido puro.
+\end{itemize}
+
+A diferencia de los GAN, donde un generador y un discriminador se
+entrenan de forma adversaria, o de los VAE, que comprimen los datos
+en un espacio latente de baja dimensión, los modelos de difusión
+descomponen la generación en una secuencia larga de pasos de
+\emph{denoising} pequeños y bien condicionados, cada uno de los cuales
+es un problema de aprendizaje supervisado sencillo y estable. Esta
+estabilidad de entrenamiento, junto con la calidad y diversidad de las
+muestras, es lo que ha convertido a la difusión en el paradigma
+dominante de la IA generativa actual.
+
+\todo{Decidir si se incluye aquí una figura-resumen que ilustre las
+dos cadenas (forward/reverse) sobre una imagen de ejemplo, o si se
+reutiliza la figura del capítulo de mariposas. Añadir comparativa
+breve con GAN/VAE si se quiere reforzar el posicionamiento.}
+
+% ---------------------------------------------------------------------
+\section{¿Por qué pareció interesante la difusión?}
+\label{sec:por-que-difusion}
+
+\subsection{El origen físico: termodinámica del no equilibrio}
+\label{subsec:origen-fisico}
+
+La motivación original de los modelos de difusión es explícitamente
+física. El trabajo fundacional de Sohl-Dickstein et
+al.~\cite{sohldickstein2015} se inspira en la \emph{termodinámica del
+no equilibrio}: del mismo modo que una gota de tinta en un vaso de
+agua se difunde hasta repartirse de manera homogénea —un estado de
+máxima entropía, fácil de describir—, una distribución de datos
+compleja puede transformarse, mediante un proceso de difusión, en una
+distribución gaussiana simple. La apuesta teórica fue que, si dicho
+proceso de difusión se aplica con pasos suficientemente pequeños,
+cada paso de la \emph{inversión} de ese proceso admite también una
+forma funcional sencilla (gaussiana), lo que lo hace aprendible por
+una red neuronal. Es decir: se renuncia a modelar directamente la
+complejísima $p(x)$ y, a cambio, se modela una larga secuencia de
+transiciones locales, cada una de ellas tratable.
+
+Esta analogía con la física no es meramente decorativa. La conexión
+formal con las ecuaciones de difusión y, más adelante, con las
+ecuaciones diferenciales estocásticas (SDE), dota al método de un
+aparato matemático maduro —el de los procesos de difusión y la
+ecuación de Fokker-Planck— del que se pueden tomar prestadas
+herramientas de análisis y de muestreo.
+
+\subsection{Score-matching: la otra raíz teórica}
+\label{subsec:score-matching}
+
+Existe una segunda línea de trabajo, inicialmente independiente, que
+conviene distinguir con cuidado porque resulta clave para responder a
+la pregunta de \emph{por qué} la difusión pareció prometedora: el
+\emph{score-matching}. En esta formulación, propuesta por Song y
+Ermon~\cite{song2019scorematching}, el objetivo no es modelar la
+densidad $p(x)$ sino su \emph{score}, esto es, el gradiente del
+logaritmo de la densidad respecto a los datos,
+$\nabla_x \log p(x)$. Conocer este campo vectorial basta para generar
+muestras: partiendo de ruido, se siguen iterativamente los gradientes
+hacia regiones de alta densidad mediante \emph{dinámica de Langevin}.
+
+El problema práctico es que el score está mal estimado en las zonas de
+baja densidad, precisamente donde el muestreo arranca. La solución que
+propusieron —perturbar los datos con ruido gaussiano a múltiples
+escalas y estimar el score de cada versión ruidosa— es,
+sorprendentemente, casi idéntica en la práctica al proceso de
+difusión de Sohl-Dickstein. Esta convergencia se formalizó después en
+el marco unificado de las ecuaciones diferenciales estocásticas de
+Song et al.~\cite{song2021sde}, donde tanto los DDPM como los modelos
+de score-matching se revelan como dos discretizaciones distintas de la
+misma SDE subyacente.
+
+\subsection{¿Y todo esto aplica a los modelos que usamos hoy?}
+\label{subsec:aplica-hoy}
+
+Esta es la pregunta que motiva el matiz más importante del capítulo.
+La intuición física de la difusión y el marco de score-matching son
+\emph{dos perspectivas teóricas distintas sobre el mismo objeto}, y
+ambas se aplican —en el sentido de que ofrecen una explicación
+válida— a los modelos que utilizamos en este trabajo. Sin embargo, es
+importante no confundir la \emph{justificación teórica} con la
+\emph{formulación operativa}:
+
+\begin{itemize}
+    \item Los modelos que empleamos aquí pertenecen a la familia
+    \textbf{DDPM}~\cite{ho2020ddpm} y sus descendientes
+    deterministas (DDIM~\cite{song2021ddim}). Su entrenamiento no se
+    plantea explícitamente como score-matching ni como la inversión
+    de una SDE, sino como un objetivo de \emph{predicción del ruido}:
+    la red recibe una muestra ruidosa $x_t$ y el paso $t$, y aprende
+    a predecir el ruido $\epsilon$ que se le añadió.
+    \item No obstante, puede demostrarse que ese objetivo de
+    predicción de ruido es \emph{equivalente}, salvo una constante de
+    reescalado dependiente de $t$, a estimar el score
+    $\nabla_{x_t}\log q(x_t)$ de la distribución ruidosa. Es decir:
+    aunque los DDPM no se \emph{deriven} desde el score-matching, sí
+    lo \emph{realizan} implícitamente.
+\end{itemize}
+
+En resumen, la respuesta a la pregunta planteada es matizada: la raíz
+física-termodinámica y el score-matching no son frameworks rivales
+sino caras de una misma teoría, y ambos describen correctamente lo que
+hacen los modelos modernos; pero la maquinaria concreta con la que
+entrenamos e inferimos en este trabajo es la de DDPM/DDIM, cuya
+formulación es la del \emph{denoising} probabilístico y no la de la
+dinámica de Langevin sobre scores.
+
+\todo{Si el tribunal lo requiere, desarrollar formalmente la
+equivalencia entre la predicción de ruido $\epsilon_\theta$ y el score
+$\nabla_{x_t}\log q(x_t)$, mostrando el factor de reescalado
+$-1/\sqrt{1-\bar\alpha_t}$. Decidir el nivel de profundidad
+matemática deseado para la defensa.}
+
+\todo{Revisar / confirmar la atribución histórica: Sohl-Dickstein
+(2015) como origen termodinámico, Song \& Ermon (2019) como score-
+matching, Song et al.\ (2021, SDE) como unificación, Ho et al.\ (2020,
+DDPM) como popularización. Añadir cualquier referencia adicional que
+el tutor considere canónica.}
+
+% ---------------------------------------------------------------------
+\section{Principales aplicaciones}
+\label{sec:aplicaciones-difusion}
+
+El interés teórico se vio rápidamente respaldado por resultados
+empíricos que situaron a la difusión por delante de los GAN en
+síntesis de imágenes~\cite{dhariwal2021beatgans}. Desde entonces, el
+abanico de aplicaciones se ha ampliado de forma notable. A modo de
+panorámica:
+
+\begin{itemize}
+    \item \textbf{Síntesis de imágenes incondicional y condicional},
+    incluyendo la generación texto-a-imagen a gran escala, viable
+    gracias a los modelos de difusión latente que operan en un espacio
+    comprimido en lugar de en el espacio de píxeles~\cite{rombach2022ldm}.
+    \item \textbf{Problemas inversos en imagen}: super-resolución,
+    \textit{inpainting}, \textit{deblurring} y \emph{denoising}, donde
+    se busca recuperar una señal limpia a partir de una observación
+    degradada.
+    \item \textbf{Imagen médica}, que es el contexto de este trabajo:
+    reconstrucción, reducción de ruido y síntesis de modalidades, con
+    aplicaciones específicas a PET~\cite{scorepet2024,ddpmpet2023} que
+    motivan directamente la contribución de esta memoria.
+    \item \textbf{Otros dominios}: generación de audio y voz, de vídeo,
+    de estructuras moleculares y de datos científicos, donde la misma
+    receta de \emph{corromper y aprender a revertir} se traslada con
+    pocas modificaciones.
+\end{itemize}
+
+La aplicación que vertebra este trabajo —la reconstrucción de PET de
+baja dosis— se sitúa en la intersección entre los problemas inversos
+en imagen y la imagen médica, y se desarrolla en detalle en el
+Capítulo~\ref{cap:pet}.
+
+\todo{Ajustar las referencias de aplicaciones a las que finalmente se
+citen en la introducción para evitar duplicidades, y añadir las que
+falten (p.\,ej.\ audio/vídeo si se quiere mencionar explícitamente).
+Verificar la etiqueta \texttt{cap:pet} del capítulo de PET.}
+
+% ---------------------------------------------------------------------
+\section{Formulación del proceso de difusión}
+\label{sec:formulacion-difusion}
+
 En el contexto de generación de datos, se parte de una distribución
 de probabilidad $p(x)$ que representa los datos de entrenamiento.
 En el caso de las imágenes, podemos pensar en esta distribución
@@ -247,69 +438,96 @@ imágenes más rápidamente; pero los parámetros se siguen
 actualizando y aprendiendo con más certeza la distribución
 subyacente de imágenes de mariposas.
 
-La \Cref{fig:mariposas-evolucion} ilustra este fenómeno: muestras
-generadas con el modelo entrenado hasta diferentes épocas (cada
-panel corresponde al \textit{checkpoint} guardado al final de la
-época indicada). En las épocas tempranas las muestras presentan
-contornos difusos y texturas con artefactos de alta frecuencia;
-hacia las últimas épocas, el modelo recupera siluetas reconocibles
-de mariposa, simetría bilateral y patrones de coloración
-consistentes.
+Para ilustrar este fenómeno comparamos las muestras generadas por
+el modelo en dos momentos opuestos del entrenamiento: las primeras
+20 épocas y las últimas 20 épocas (cada panel corresponde al
+\textit{checkpoint} guardado al final de la época indicada).
+
+La \Cref{fig:mariposas-tempranas} recoge las muestras de las
+primeras 20 épocas, concretamente las correspondientes a los
+\textit{checkpoints} de las épocas~10 y~20. En esta fase temprana
+las mariposas apenas son reconocibles: aparecen como manchas de
+color difusas, sin contornos definidos ni simetría, y con
+texturas dominadas por artefactos de alta frecuencia. El modelo ya
+ha captado la paleta cromática general del conjunto de datos
+(tonos cálidos sobre fondos vegetales), pero todavía no ha
+aprendido la estructura espacial que caracteriza a una mariposa.
 
 \begin{figure}[h!]
     \centering
-    \includegraphics[width=0.23\linewidth]{img/generated_butterflies/256pix_0009.png}\hfill
-    \includegraphics[width=0.23\linewidth]{img/generated_butterflies/256pix_0019.png}\hfill
-    \includegraphics[width=0.23\linewidth]{img/generated_butterflies/256pix_0029.png}\hfill
-    \includegraphics[width=0.23\linewidth]{img/generated_butterflies/256pix_0049.png}
-    \\[0.5em]
-    \includegraphics[width=0.23\linewidth]{img/generated_butterflies/256pix_0069.png}\hfill
-    \includegraphics[width=0.23\linewidth]{img/generated_butterflies/256pix_0079.png}\hfill
-    \includegraphics[width=0.23\linewidth]{img/generated_butterflies/256pix_0089.png}\hfill
-    \includegraphics[width=0.23\linewidth]{img/generated_butterflies/256pix_0099.png}
-    \caption{Evolución de las muestras generadas por el modelo de
-    difusión a lo largo del entrenamiento, a resolución
-    $256 \times 256$. De izquierda a derecha y de arriba a abajo,
-    \textit{checkpoints} al final de las épocas 10, 30, 50, 70,
-    80, 90, 100 y 20. Las muestras de las primeras épocas son
-    borrosas y carecen de estructura coherente; las muestras
-    avanzadas exhiben siluetas y simetrías reconocibles.}
-    \label{fig:mariposas-evolucion}
+    \includegraphics[width=0.35\linewidth]{img/generated_butterflies/256pix_0009.png}\hspace{1em}
+    \includegraphics[width=0.35\linewidth]{img/generated_butterflies/256pix_0019.png}
+    \caption{Muestras de las primeras 20 épocas a resolución
+    $256 \times 256$: \textit{checkpoints} al final de las
+    épocas~10 (izquierda) y~20 (derecha). Las muestras son borrosas
+    y carecen de estructura coherente, aunque ya reproducen la
+    paleta cromática del conjunto de entrenamiento.}
+    \label{fig:mariposas-tempranas}
 \end{figure}
 
-A pesar de que la pérdida es la misma que en épocas más tempranas,
-se observa que las imágenes empiezan a ser buenas en la época~90,
-parando en la época~100, en la cual podemos obtener resultados
-como los recogidos en la \Cref{fig:mariposas-mejores}.
+En contraste, la \Cref{fig:mariposas-tardias} muestra las muestras
+de las últimas 20 épocas, correspondientes a los
+\textit{checkpoints} de las épocas~90 y~100. A pesar de que la
+pérdida es prácticamente la misma que en épocas más tempranas, la
+calidad perceptual ha mejorado de forma notable: la red genera
+mariposas con siluetas reconocibles, simetría bilateral aproximada
+y patrones de color coherentes con la distribución de
+entrenamiento. Se observa que las imágenes empiezan a ser buenas
+en torno a la época~90 y se estabilizan en la época~100.
 
 \begin{figure}[h!]
     \centering
-    \includegraphics[width=0.6\linewidth]{img/generated_butterflies/256pix_0099.png}
-    \caption{Muestras del modelo entrenado durante 100 épocas a
-    resolución $256 \times 256$. La red genera mariposas con
-    siluetas reconocibles, simetría bilateral aproximada y
-    patrones de color coherentes con la distribución de
-    entrenamiento.}
-    \label{fig:mariposas-mejores}
+    \includegraphics[width=0.35\linewidth]{img/generated_butterflies/256pix_0089.png}\hspace{1em}
+    \includegraphics[width=0.35\linewidth]{img/generated_butterflies/256pix_0099.png}
+    \caption{Muestras de las últimas 20 épocas a resolución
+    $256 \times 256$: \textit{checkpoints} al final de las
+    épocas~90 (izquierda) y~100 (derecha). Las muestras exhiben
+    siluetas y simetrías reconocibles y patrones de color
+    consistentes con la distribución de entrenamiento.}
+    \label{fig:mariposas-tardias}
 \end{figure}
 
-\paragraph{Comparación con la línea base $128 \times 128$.}
-La \Cref{fig:mariposas-128} muestra dos ejemplos generados por la
-iteración previa del experimento, entrenada durante 50 épocas y
-con reescalado directo a $128 \times 128$ sin preservar la
-relación de aspecto. Aunque la red aprende ciertas regularidades
-de color y forma, las mariposas aparecen visiblemente deformadas,
-lo cual ilustra el impacto del preprocesamiento sobre la calidad
-final.
+\paragraph{Comparación en inferencia: $128 \times 128$ frente a
+$256 \times 256$.}
+Una vez analizada la evolución del entrenamiento, comparamos la
+calidad de las muestras obtenidas en inferencia con las dos
+resoluciones consideradas. La \Cref{fig:mariposas-128} muestra dos
+ejemplos generados por la iteración previa del experimento,
+entrenada con reescalado directo a $128 \times 128$ sin preservar
+la relación de aspecto. Aunque la red aprende ciertas
+regularidades de color y forma, las mariposas aparecen
+visiblemente deformadas, lo cual ilustra el impacto del
+preprocesamiento sobre la calidad final.
 
 \begin{figure}[h!]
     \centering
     \includegraphics[width=0.35\linewidth]{img/generated_butterflies/128pix_sample1.jpeg}\hspace{1em}
     \includegraphics[width=0.35\linewidth]{img/generated_butterflies/128pix_sample2.jpeg}
-    \caption{Línea base $128 \times 128$ (50 épocas, reescalado
-    directo sin \textit{padding}). Las muestras presentan
-    deformaciones sistemáticas heredadas del preprocesamiento.}
+    \caption{Muestras en inferencia a resolución $128 \times 128$
+    (reescalado directo sin \textit{padding}). Las muestras
+    presentan deformaciones sistemáticas heredadas del
+    preprocesamiento.}
     \label{fig:mariposas-128}
+\end{figure}
+
+Por su parte, la \Cref{fig:mariposas-256} recoge dos ejemplos
+generados en inferencia a resolución $256 \times 256$. Frente a la
+línea base anterior, estas muestras presentan siluetas mucho más
+nítidas y proporciones realistas, sin las deformaciones
+sistemáticas de la versión a $128 \times 128$. El aumento de
+resolución, combinado con un preprocesamiento que preserva la
+relación de aspecto, se traduce en mariposas con mayor nivel de
+detalle y mejor definición de los patrones alares.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.35\linewidth]{img/generated_butterflies/256pix_sample1.jpeg}\hspace{1em}
+    \includegraphics[width=0.35\linewidth]{img/generated_butterflies/256pix_sample2.jpeg}
+    \caption{Muestras en inferencia a resolución $256 \times 256$.
+    Frente a la línea base de $128 \times 128$, las muestras son
+    más nítidas, con proporciones realistas y mayor nivel de
+    detalle en los patrones alares.}
+    \label{fig:mariposas-256}
 \end{figure}
 
 
@@ -338,23 +556,22 @@ y una distribución conocida. Esta distribución conocida se elige
 como gaussiana por sus propiedades matemáticas convenientes,
 aunque otras opciones son posibles.
 
-\section{Planteamiento del MVP}
-\label{sec:pet-mvp}
+\section{Planteamiento de la solución}
+\label{sec:pet-planteamiento}
 
 A partir de los fundamentos repasados anteriormente y de las
 propuestas recogidas en el estado del arte
-(\Cref{sec:estado-del-arte}), se fija un primer producto mínimo
-viable (MVP) para la tarea de reconstrucción de PET de dosis baja
-con modelos de difusión. El diseño persigue dos objetivos: ser
-\textbf{defendible científicamente} —cada decisión está
-justificada por la literatura recogida o por los fundamentos
-teóricos repasados— y \textbf{ejecutable sobre hardware
-asequible}. El planteamiento inicial fijaba como techo el equipo
-local empleado en el experimento de mariposas —un MacBook Pro M4
-Pro con 24~GB de memoria unificada y aceleración MPS, sin acceso
-a CUDA—; durante el desarrollo se complementó con acceso a una
-NVIDIA RTX PRO 4500 sobre la plataforma cloud RunPod, lo cual
-permitió relajar varios parámetros de optimización (véase
+(\Cref{sec:estado-del-arte}), se diseña la solución para la tarea
+de reconstrucción de PET de dosis baja con modelos de difusión.
+El diseño persigue dos objetivos: ser \textbf{defendible
+científicamente} —cada decisión está justificada por la literatura
+recogida o por los fundamentos teóricos repasados— y
+\textbf{ejecutable sobre el hardware disponible}. El
+entrenamiento se ejecutó sobre una NVIDIA RTX PRO 4500 en la
+plataforma cloud RunPod, tras una fase preliminar de validación
+del flujo sobre el equipo local empleado en el experimento de
+mariposas —un MacBook Pro M4 Pro con 24~GB de memoria unificada y
+aceleración MPS, sin acceso a CUDA— (véase
 \Cref{sec:pet-infraestructura}).
 
 La reconstrucción de PET de dosis baja se formula como un
@@ -433,13 +650,32 @@ la formulación 2D muestra inconsistencias inter-\textit{slice}.
 
 \paragraph{Recorte y reescalado.}
 Para cada volumen se calcula una \textit{bounding box} única a
-partir del \textit{foreground} de la versión de dosis completa, y
-se aplica idéntica al volumen pareado de dosis baja, garantizando
-que ambos comparten exactamente el mismo recorte. Cada
+partir del \textit{foreground} de la versión de \textbf{dosis
+baja}, y se aplica idéntica al volumen pareado de dosis completa,
+garantizando que ambos comparten exactamente el mismo recorte.
+Derivar el recorte de la dosis baja —y no de la completa— evita
+cualquier fuga de información del objetivo hacia la entrada: la
+\textit{bounding box}, la escala de normalización $M$ y el filtrado
+de \textit{slices} se calculan todos a partir de la observación de
+dosis baja, la única señal disponible en inferencia para un
+volumen no visto. Cada
 \textit{slice} axial recortado se redimensiona a $256 \times 256$
 píxeles mediante interpolación bilineal. Esta resolución
 concentra la capacidad del modelo en la anatomía relevante y
 reduce la carga computacional respecto al $440 \times 440$ nativo.
+
+La resolución de trabajo $256^2$ es menor que la nativa
+($440 \times 440$). No es posible entrenar directamente sobre
+$440^2$: la arquitectura U-Net empleada tiene seis bloques —cinco
+operaciones de \textit{down}/\textit{upsampling}, $2^5 = 32$—, de
+modo que el lado de la imagen de entrada debe ser divisible entre
+32, y $440$ no lo es. Tamaños como $384$ o $416$ —más cercanos a
+la calidad nativa y divisibles entre 32— sí serían admisibles,
+pero no se han explorado: el coste de cualquier fase del
+entrenamiento crece de forma aproximadamente cuadrática con el
+lado de la imagen, y ya resulta elevado a $256^2$. La elección de
+$256^2$ equilibra fidelidad anatómica y coste computacional dentro
+del alcance del proyecto.
 
 \paragraph{Normalización per-volumen estabilizadora de varianza.}
 Las cuentas se mapean al rango $[-1, 1]$ mediante la
@@ -452,15 +688,59 @@ transformación
 \end{equation}
 donde $k = 10$ actúa como codo suave entre el régimen lineal y
 el logarítmico, y $M$ es el percentil 99,5 del \textbf{volumen de
-dosis completa}. El mismo $M$ se aplica al volumen pareado de
-dosis baja, de modo que ambos comparten escala y siguen siendo
-directamente comparables tras la normalización. La función
+dosis baja}. El mismo $M$ derivado de la dosis baja se aplica
+también al volumen pareado de dosis completa, de modo que ambos
+comparten escala y siguen siendo directamente comparables tras la
+normalización. Calcular $M$ exclusivamente sobre la dosis baja es
+esencial para no introducir fuga del objetivo: $M$ debe poder
+recomputarse en inferencia a partir de la única señal disponible,
+el escaneo de dosis baja de un volumen no visto. La función
 $\operatorname{arcsinh}$ es la transformación canónica
 estabilizadora de varianza para señales positivas de cola pesada
 con estructura aproximadamente Poisson: se comporta linealmente
 cerca de cero y logarítmicamente para valores grandes, sin la
 patología de $\log(0)$. Los parámetros $(M, k)$ se almacenan por
 volumen para invertir la transformación durante la evaluación.
+
+\paragraph{Elección del percentil de referencia.}
+La elección de $M$ como percentil 99,5 —y no como el máximo
+(percentil 100)— es deliberada. Si se fijara $M$ al valor más alto
+del volumen, un único vóxel atípico muy brillante podría
+desviarse mucho de la distribución y aplanar el resto de la
+imagen, perdiendo detalle en la masa de tejido. Por otra parte,
+los modelos de difusión asumen que los datos viven en $[-1, +1]$:
+es para esa banda para la que está ajustado el calendario de
+ruido. Los vóxeles que quedan bastante por encima de $+1$ están
+efectivamente fuera de distribución para el proceso de ruido hacia
+delante, y el modelo tiende a reconstruirlos peor (saturación
+suave / subestimación de la intensidad máxima). No se
+\textit{clippean} esos valores —dejarlos sobresalir por encima de
+$+1$ mantiene exacta la inversión de la transformación—, pero su
+proporción debe ser pequeña. Un análisis del porcentaje de
+\textit{foreground} mapeado por encima de $+1$ para distintos
+percentiles arroja:
+\begin{center}
+\begin{tabular}{lc}
+\toprule
+Percentil & \% \textit{foreground} mapeado por encima de $+1$ \\
+\midrule
+90{,}0 & 10{,}00\,\% \\
+95{,}0 & 5{,}00\,\% \\
+99{,}0 & 1{,}00\,\% \\
+\textbf{99{,}5} & \textbf{0{,}50\,\%} (por defecto) \\
+99{,}9 & 0{,}10\,\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+Bajar el percentil dedicaría más del rango $[-1, +1]$ a la masa
+de vóxeles —lo cual podría mejorar las métricas estructurales en
+tejido blando (SSIM, contraste de intensidad media)— a costa de
+empeorar la fidelidad de intensidad máxima en regiones calientes
+y las métricas de preservación de intensidad en espacio de
+cuentas. El percentil 99,5 deja fuera únicamente un 0,5\,\% de
+\textit{foreground} —\textit{outliers} muy brillantes—, lo cual
+preserva la distribución original de los datos a la vez que los
+normaliza de forma efectiva.
 
 \paragraph{Filtrado de \textit{slices}.}
 Tras el recorte y la normalización, se conservan únicamente
@@ -677,11 +957,11 @@ del tiempo de escaneo y la posterior etapa de reconstrucción
 algorítmica, ninguna de las cuales se modela explícitamente—.
 La pérdida cuadrática en el espacio normalizado por
 $\operatorname{arcsinh}$ equivale a una verosimilitud gaussiana
-isotrópica sobre la representación estabilizada de varianza,
-suficiente como \textit{baseline}. La sustitución de $\sigma$
-uniforme por $\sigma(\mathbf{y})$ derivada de la estadística de
-Poisson es una de las extensiones identificadas como prioritarias
-en el \textit{roadmap} posterior al MVP.
+isotrópica sobre la representación estabilizada de varianza. La
+sustitución de $\sigma$ uniforme por $\sigma(\mathbf{y})$ derivada
+de la estadística de Poisson es una de las extensiones
+identificadas como líneas de desarrollo futuro
+(\Cref{sec:lineas-futuras}).
 
 \section{Evaluación}
 \label{sec:pet-evaluacion}
@@ -697,6 +977,27 @@ y (ii) restringidas a la máscara de \textit{foreground} del
 \textit{slice}. La variante restringida es la clínicamente
 relevante porque ignora el fondo vacío; la variante completa es
 la convención estándar y permite la comparación con la literatura.
+
+Estas tres métricas se calculan sobre el \textbf{espacio
+normalizado} de las imágenes (la representación
+$\operatorname{arcsinh}$ en $[-1, +1]$), y no sobre el espacio de
+cuentas. La razón es que el PET tiene un rango dinámico altísimo:
+el PSNR colapsa hacia el vóxel más brillante, por lo que evaluarlo
+en cuentas equivaldría a medir casi exclusivamente cómo de bien se
+reproduce el punto más caliente, siendo numéricamente insensible
+a los errores del resto de la imagen; análogamente, los valores
+atípicos inflarían el SSIM. Además, promediar a lo largo de
+pacientes requiere una escala común para que las comparaciones
+intra-volumen sean justas. La reformulación clave es que
+$\operatorname{arcsinh}$ es monótona e invertible y se aplica por
+igual a la reconstrucción y al \textit{ground truth}: no oculta el
+error, sino que lo repondera para que cuenten los errores
+relativos en todo el rango dinámico en lugar de los errores
+absolutos en el pico. Así, PSNR/SSIM en espacio normalizado son
+una comparación fiel del resultado final, bajo una ponderación de
+intensidad en la que la métrica no está degenerada. La
+preservación de intensidad cuantitativa, en cambio, sí se evalúa
+en espacio de cuentas (véase a continuación).
 
 \paragraph{Preservación de intensidad.}
 Como métrica \textit{proxy} de la preservación de SUV —no se
@@ -718,18 +1019,57 @@ exactamente los mismos volúmenes y los mismos \textit{slices},
 lo cual garantiza que las métricas reportadas son directamente
 comparables.
 
-\todo{Insertar tabla resumen con PSNR / SSIM / NRMSE de ambos
-\textit{pipelines} sobre el conjunto de test y figuras
-representativas tras la fase experimental.}
+\subsection{Resultados}
+\label{sec:pet-resultados}
+
+La \Cref{tab:pet-supervisado} recoge las métricas del Pipeline~A
+(supervisado condicional) sobre el conjunto de test, evaluado en
+los \textit{checkpoints} de las épocas 50 y 100. La progresión
+entre ambos \textit{checkpoints} es consistente en las métricas de
+calidad de imagen: el PSNR sobre el \textit{slice} completo sube
+de $34{,}52$ a $35{,}32$~dB, el SSIM mejora tanto en
+\textit{foreground} como en el \textit{slice} completo, y el NRMSE
+disminuye en ambas variantes. La preservación de intensidad media
+en espacio de cuentas se mantiene en torno a un $-4$ a $-5$\,\% de
+error relativo, lo cual indica una ligera subestimación
+sistemática de la señal —coherente con la saturación suave
+esperable en las regiones más calientes—.
+
+\begin{table}[h!]
+    \centering
+    \begin{tabular}{lcc}
+        \toprule
+        Métrica & Época 50 & Época 100 \\
+        \midrule
+        PSNR \textit{foreground} (dB) & $29{,}94$ & $30{,}20$ \\
+        PSNR \textit{slice} completo (dB) & $34{,}52$ & $35{,}32$ \\
+        SSIM \textit{foreground} & $0{,}9638$ & $0{,}9652$ \\
+        SSIM \textit{slice} completo & $0{,}9207$ & $0{,}9251$ \\
+        NRMSE \textit{foreground} & $0{,}0375$ & $0{,}0364$ \\
+        NRMSE \textit{slice} completo & $0{,}0213$ & $0{,}0194$ \\
+        Error medio intensidad (\%) & $-4{,}18$ & $-4{,}75$ \\
+        Error máximo intensidad (\%) & $-14{,}64$ & $-18{,}47$ \\
+        \bottomrule
+    \end{tabular}
+    \caption{Métricas del Pipeline~A (supervisado condicional)
+    sobre el conjunto de test, en los \textit{checkpoints} de las
+    épocas 50 y 100. PSNR/SSIM/NRMSE se calculan en espacio
+    normalizado; el error de intensidad, en espacio de cuentas.}
+    \label{tab:pet-supervisado}
+\end{table}
+
+\todo{Añadir la columna del Pipeline~B (prior no condicional con
+DPS) a la \Cref{tab:pet-supervisado} e insertar las figuras
+representativas de cuatro paneles tras completar su evaluación.}
 
 \section{Infraestructura de cómputo y migración a la nube}
 \label{sec:pet-infraestructura}
 
 \subsection{Plan inicial: cómputo local}
 
-El planteamiento inicial del MVP, recogido en
-\Cref{sec:pet-mvp}, asumía la ejecución completa del
-entrenamiento y la inferencia en local sobre el mismo MacBook
+El planteamiento inicial, recogido en
+\Cref{sec:pet-planteamiento}, contemplaba la ejecución completa
+del entrenamiento y la inferencia en local sobre el mismo MacBook
 Pro M4 Pro empleado en el experimento preliminar de mariposas:
 24~GB de memoria unificada, PyTorch~2.10 con \textit{backend}
 MPS, y un \textit{micro-batch} de 4 \textit{slices} con
