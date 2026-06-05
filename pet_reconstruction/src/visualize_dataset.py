@@ -1,13 +1,14 @@
 """
-Visualizador comparativo de dosis completa vs dosis 1/20 (PET NIfTI).
+Visualizador del DATASET: dosis completa vs dosis 1/20 (PET NIfTI crudo).
 
 Muestra los tres planos ortogonales de ambos volúmenes en paralelo con
-sliders sincronizados para navegar por los cortes.
+sliders sincronizados para navegar por los cortes. Para comparar
+reconstrucciones de un experimento usa `src.visualize_reconstruction`.
 
 Uso (desde pet_reconstruction/):
-    python -m src.visualize_nifti                         # primer par del dataset
-    python -m src.visualize_nifti <prefijo>               # ej. "01122021_1_20211201_164050"
-    python -m src.visualize_nifti <ruta_full> <ruta_20>   # rutas absolutas/relativas
+    python -m src.visualize_dataset                         # primer par del dataset
+    python -m src.visualize_dataset <prefijo>               # ej. "01122021_1_20211201_164050"
+    python -m src.visualize_dataset <ruta_full> <ruta_20>   # rutas absolutas/relativas
 
 Dependencias:
     pip install nibabel matplotlib numpy
