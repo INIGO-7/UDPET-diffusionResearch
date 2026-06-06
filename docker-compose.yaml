@@ -1,0 +1,53 @@
+# =============================================================================
+# docker-compose para probar EN LOCAL la misma imagen que usarás en RunPod.
+#
+# Al arrancar, el entrypoint (docker-entrypoint.sh):
+#   1) clona el repo en /workspace/UDPET-diffusionResearch
+#   2) descarga el dataset preprocesado de Hugging Face y reconstruye data/
+#   3) deja una shell en pet_reconstruction/
+#
+# Uso:
+#   1) Copia .env.example a .env y rellena HF_DATASET_REPO / HF_TOKEN.
+#   2) docker compose build
+#   3) docker compose run --rm tfm                       # shell ya preparada
+#      docker compose run --rm tfm python -m src.main train --pipeline supervised --smoke
+#
+# Para probar el build SIN bajar los 60 GB: pon SKIP_DATASET=1 en .env
+# (clona el repo pero no toca el dataset).
+# =============================================================================
+services:
+  tfm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tfm-pet-reconstruction:local
+    # RunPod es linux/amd64 y los wheels CUDA de PyTorch solo existen para esa
+    # plataforma. En Mac (arm64) se construye/ejecuta emulado vía QEMU: sirve
+    # para validar build y entrypoint, no para correr CUDA en local.
+    platform: linux/amd64
+    env_file:
+      - .env
+    environment:
+      # Valores por defecto; .env tiene prioridad si redefine alguno.
+      REPO_BRANCH: master
+      HF_HUB_ENABLE_HF_TRANSFER: "1"
+    volumes:
+      # Volumen persistente que emula el /workspace persistente de RunPod:
+      # el repo clonado y el dataset reconstruido sobreviven entre `run`s,
+      # así no se reclona ni se vuelve a bajar el dataset cada vez.
+      - workspace:/workspace
+    stdin_open: true   # -i
+    tty: true          # -t
+    # --- GPU -----------------------------------------------------------------
+    # En RunPod la GPU se asigna por la plataforma (no usa este bloque). En una
+    # máquina local con GPU NVIDIA + nvidia-container-toolkit, descomenta:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+volumes:
+  workspace:

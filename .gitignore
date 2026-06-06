@@ -1,6 +1,9 @@
 .DS_Store
 __pycache__
 
+# Secrets / entorno local
+.env
+
 /res
 data
 logs/

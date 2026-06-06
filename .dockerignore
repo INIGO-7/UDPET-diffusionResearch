@@ -1,0 +1,26 @@
+# El contexto de build NO debe arrastrar datasets, cachés ni salidas pesadas.
+# En desarrollo todo eso entra por el bind-mount del docker-compose.
+.git
+.env
+.DS_Store
+__pycache__/
+**/__pycache__/
+
+# Datos / caché / salidas (pesados, no van en la imagen)
+res/
+data/
+logs/
+checkpoints/
+**/checkpoints/
+**/evaluations/
+**/reconstructions/
+**/previews/
+**/experiments_out/
+.cache/
+
+# LaTeX
+memoria/
+
+# Otros
+*.nii.gz
+ddpm*/
