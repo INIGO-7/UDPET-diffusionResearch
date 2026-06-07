@@ -76,6 +76,7 @@ def run_regression_training(
     save_model_fn: Callable = _default_save_model,
     preview_sampler: Callable[[torch.nn.Module], dict[str, torch.Tensor]] | None = None,
     preview_references: dict[str, torch.Tensor] | None = None,
+    validation_fn: Callable[[torch.nn.Module], dict[str, float]] | None = None,
 ) -> None:
     """Run the MSE regression training loop with EMA, accumulation and tensorboard.
 
@@ -92,6 +93,12 @@ def run_regression_training(
         preview_sampler: optional callable invoked at each checkpoint with the
             EMA-applied unwrapped model in eval mode; returns {tag: CHW image}.
         preview_references: optional fixed reference images logged once.
+        validation_fn: optional callable invoked at each checkpoint with the
+            EMA-applied unwrapped model in eval mode; returns {metric_name ->
+            value}, each logged to TensorBoard under "val/<metric_name>". For the
+            regressors the training loss already tracks convergence, but these
+            task metrics make the baselines directly comparable to the diffusion
+            pipelines on the same axes.
     """
     # Free speedup for any residual fp32 matmuls on Ampere+/Blackwell GPUs.
     if torch.cuda.is_available():
@@ -184,31 +191,45 @@ def run_regression_training(
                 )
                 accelerator.print(f"Saved checkpoint to {save_dir}")
 
-                if preview_sampler is not None:
+                if preview_sampler is not None or validation_fn is not None:
                     writer = accelerator.get_tracker("tensorboard", unwrap=True)
-                    if not preview_refs_logged and preview_references is not None:
+                    if (
+                        preview_sampler is not None
+                        and not preview_refs_logged
+                        and preview_references is not None
+                    ):
                         for tag, img in preview_references.items():
                             writer.add_image(
                                 tag, img.clamp(0, 1), global_step, dataformats="CHW"
                             )
                         preview_refs_logged = True
 
-                    # Mirror the EMA swap from _save_checkpoint so previews use the
-                    # same weights that will be loaded at inference time.
+                    # Mirror the EMA swap from _save_checkpoint so previews and
+                    # validation use the same weights loaded at inference time.
                     unwrapped = accelerator.unwrap_model(model)
                     if ema is not None:
                         ema.store(unwrapped.parameters())
                         ema.copy_to(unwrapped.parameters())
                     was_training = unwrapped.training
                     unwrapped.eval()
+                    images: dict[str, torch.Tensor] = {}
+                    metrics: dict[str, float] = {}
                     try:
-                        images = preview_sampler(unwrapped)
+                        if validation_fn is not None:
+                            metrics = validation_fn(unwrapped)
+                        if preview_sampler is not None:
+                            images = preview_sampler(unwrapped)
                     finally:
                         if was_training:
                             unwrapped.train()
                         if ema is not None:
                             ema.restore(unwrapped.parameters())
 
+                    for name, value in metrics.items():
+                        writer.add_scalar(f"val/{name}", value, global_step)
+                    if metrics:
+                        summary = "  ".join(f"{k}={v:.4f}" for k, v in sorted(metrics.items()))
+                        accelerator.print(f"[val] epoch {epoch}: {summary}")
                     for tag, img in images.items():
                         writer.add_image(
                             tag, img.clamp(0, 1), global_step, dataformats="CHW"

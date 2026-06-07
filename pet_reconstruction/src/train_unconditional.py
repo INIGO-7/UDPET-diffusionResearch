@@ -10,11 +10,35 @@ Usage (from pet_reconstruction/):
 import torch
 
 from ._train_engine import resolve_resume_path, run_training
+from ._validation import build_validation_fn
 from .config import UnconditionalConfig
 from .data import PairedSliceDataset, build_unpaired_dataloader
 from .model_unconditional import build_model, build_noise_scheduler
 from .reconstruct_unconditional import _build_ddim_scheduler, ddim_dps_sample
 from .splits import load_splits
+
+
+def _build_validation(cfg: UnconditionalConfig):
+    """Validation-metric callback: DPS-reconstruct fixed val slices (as at inference).
+
+    DPS sampling needs autograd through the U-Net, so reconstruct_fn does NOT wrap
+    in no_grad. Kept to a small slice count since DPS is the costliest sampler.
+    """
+    ddim_scheduler = _build_ddim_scheduler(cfg)
+
+    def reconstruct_fn(unet, y_batch):
+        device = next(unet.parameters()).device
+        return ddim_dps_sample(
+            unet,
+            ddim_scheduler,
+            y_batch,
+            cfg.sample.num_inference_steps,
+            cfg.sample.ddim_eta,
+            cfg.sample.dps_omega,
+            device,
+        )
+
+    return build_validation_fn(cfg, reconstruct_fn, num_slices=8)
 
 
 def _build_preview(cfg: UnconditionalConfig, num_samples: int = 2):
@@ -88,6 +112,7 @@ def train(cfg: UnconditionalConfig | None = None, resume_from: str | None = None
         return noisy_full
 
     preview_sampler, preview_refs = _build_preview(cfg)
+    validation_fn = _build_validation(cfg)
 
     run_training(
         cfg,
@@ -100,6 +125,7 @@ def train(cfg: UnconditionalConfig | None = None, resume_from: str | None = None
         resume_from=resume_path,
         preview_sampler=preview_sampler,
         preview_references=preview_refs,
+        validation_fn=validation_fn,
     )
 
 

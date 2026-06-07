@@ -10,11 +10,31 @@ Usage (from pet_reconstruction/):
 import torch
 
 from ._train_engine import resolve_resume_path, run_training
+from ._validation import build_validation_fn
 from .config import SupervisedConfig
 from .data import PairedSliceDataset, build_paired_dataloader
 from .model_supervised import build_model, build_noise_scheduler
 from .reconstruct_supervised import _build_ddim_scheduler, ddim_sample_conditional
 from .splits import load_splits
+
+
+def _build_validation(cfg: SupervisedConfig):
+    """Validation-metric callback: DDIM-reconstruct fixed val slices (as at inference)."""
+    ddim_scheduler = _build_ddim_scheduler(cfg)
+
+    def reconstruct_fn(unet, low_batch):
+        device = next(unet.parameters()).device
+        with torch.no_grad():
+            return ddim_sample_conditional(
+                unet,
+                ddim_scheduler,
+                low_batch,
+                cfg.sample.num_inference_steps,
+                cfg.sample.ddim_eta,
+                device,
+            )
+
+    return build_validation_fn(cfg, reconstruct_fn)
 
 
 def _build_preview(cfg: SupervisedConfig, num_samples: int = 2):
@@ -85,6 +105,7 @@ def train(cfg: SupervisedConfig | None = None, resume_from: str | None = None) -
         return torch.cat([noisy_full, batch["low"]], dim=1)
 
     preview_sampler, preview_refs = _build_preview(cfg)
+    validation_fn = _build_validation(cfg)
 
     run_training(
         cfg,
@@ -97,6 +118,7 @@ def train(cfg: SupervisedConfig | None = None, resume_from: str | None = None) -
         resume_from=resume_path,
         preview_sampler=preview_sampler,
         preview_references=preview_refs,
+        validation_fn=validation_fn,
     )
 
 

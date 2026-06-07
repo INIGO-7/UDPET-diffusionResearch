@@ -13,6 +13,7 @@ import torch
 
 from ._train_engine import resolve_resume_path
 from ._train_engine_regression import run_regression_training
+from ._validation import build_validation_fn
 from .config import CNNConfig
 from .data import PairedSliceDataset, build_paired_dataloader
 from .model_cnn import build_model, save_redcnn
@@ -81,6 +82,12 @@ def train(cfg: CNNConfig | None = None, resume_from: str | None = None) -> None:
 
     preview_sampler, preview_refs = _build_preview(cfg)
 
+    def reconstruct_fn(m, low):
+        with torch.no_grad():
+            return _forward(m, low)
+
+    validation_fn = build_validation_fn(cfg, reconstruct_fn)
+
     run_regression_training(
         cfg,
         model,
@@ -93,6 +100,7 @@ def train(cfg: CNNConfig | None = None, resume_from: str | None = None) -> None:
         save_model_fn=save_redcnn,
         preview_sampler=preview_sampler,
         preview_references=preview_refs,
+        validation_fn=validation_fn,
     )
 
 

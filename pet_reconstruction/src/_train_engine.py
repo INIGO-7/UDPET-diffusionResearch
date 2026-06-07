@@ -79,6 +79,7 @@ def run_training(
     resume_from: Path | None = None,
     preview_sampler: Callable[[torch.nn.Module], dict[str, torch.Tensor]] | None = None,
     preview_references: dict[str, torch.Tensor] | None = None,
+    validation_fn: Callable[[torch.nn.Module], dict[str, float]] | None = None,
 ) -> None:
     """Run the v-prediction training loop with EMA, accumulation and tensorboard.
 
@@ -100,6 +101,11 @@ def run_training(
             TensorBoard tag -> CHW image tensor (values roughly in [0, 1]).
         preview_references: optional dict of fixed reference images logged once
             at the first preview step (e.g. ground-truth full + low-dose inputs).
+        validation_fn: optional callable invoked at each checkpoint with the
+            EMA-applied unwrapped U-Net in eval mode (same context as
+            preview_sampler). Returns {metric_name -> value}; each is logged to
+            TensorBoard under "val/<metric_name>". This is the reliable
+            convergence signal (the training loss is not).
     """
     # Free speedup for any residual fp32 matmuls on Ampere+/Blackwell GPUs.
     if torch.cuda.is_available():
@@ -203,17 +209,21 @@ def run_training(
                 )
                 accelerator.print(f"Saved checkpoint to {save_dir}")
 
-                if preview_sampler is not None:
+                if preview_sampler is not None or validation_fn is not None:
                     writer = accelerator.get_tracker("tensorboard", unwrap=True)
-                    if not preview_refs_logged and preview_references is not None:
+                    if (
+                        preview_sampler is not None
+                        and not preview_refs_logged
+                        and preview_references is not None
+                    ):
                         for tag, img in preview_references.items():
                             writer.add_image(
                                 tag, img.clamp(0, 1), global_step, dataformats="CHW"
                             )
                         preview_refs_logged = True
 
-                    # Mirror the EMA swap from _save_checkpoint so previews use
-                    # the same weights that will be loaded at inference time.
+                    # Mirror the EMA swap from _save_checkpoint so previews and
+                    # validation use the same weights loaded at inference time.
                     unwrapped = accelerator.unwrap_model(model)
                     if ema is not None:
                         ema.store(unwrapped.parameters())
@@ -221,8 +231,8 @@ def run_training(
                     was_training = unwrapped.training
                     unwrapped.eval()
 
-                    # Isolate preview RNG so the deterministic init noise reused
-                    # across checkpoints doesn't perturb the training trajectory.
+                    # Isolate preview/validation RNG so the deterministic init
+                    # noise reused across checkpoints doesn't perturb training.
                     cpu_state = torch.random.get_rng_state()
                     cuda_state = (
                         torch.cuda.get_rng_state_all()
@@ -230,8 +240,13 @@ def run_training(
                         else None
                     )
                     torch.manual_seed(cfg.train.seed)
+                    images: dict[str, torch.Tensor] = {}
+                    metrics: dict[str, float] = {}
                     try:
-                        images = preview_sampler(unwrapped)
+                        if validation_fn is not None:
+                            metrics = validation_fn(unwrapped)
+                        if preview_sampler is not None:
+                            images = preview_sampler(unwrapped)
                     finally:
                         torch.random.set_rng_state(cpu_state)
                         if cuda_state is not None:
@@ -241,6 +256,11 @@ def run_training(
                         if ema is not None:
                             ema.restore(unwrapped.parameters())
 
+                    for name, value in metrics.items():
+                        writer.add_scalar(f"val/{name}", value, global_step)
+                    if metrics:
+                        summary = "  ".join(f"{k}={v:.4f}" for k, v in sorted(metrics.items()))
+                        accelerator.print(f"[val] epoch {epoch}: {summary}")
                     for tag, img in images.items():
                         writer.add_image(
                             tag, img.clamp(0, 1), global_step, dataformats="CHW"
