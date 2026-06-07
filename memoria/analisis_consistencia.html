@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Análisis de consistencia — Memoria TFM vs. repositorio</title>
+<style>
+  :root{
+    --bg:#0f1117; --card:#171a21; --ink:#e6e8ec; --muted:#9aa3b2;
+    --line:#262b35; --accent:#6ea8fe;
+    --crit:#ff5d5d; --high:#ff9f43; --med:#ffd23f; --low:#4dd4ac; --ok:#36c275;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:980px;margin:0 auto;padding:40px 24px 80px}
+  h1{font-size:28px;margin:0 0 4px;letter-spacing:-.3px}
+  .sub{color:var(--muted);margin:0 0 28px}
+  h2{font-size:20px;margin:38px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  h3{font-size:16px;margin:0 0 6px}
+  code{background:#222632;border:1px solid var(--line);border-radius:5px;
+    padding:1px 5px;font:13px/1.4 "SF Mono",Menlo,Consolas,monospace;color:#cdd6e8}
+  .card{background:var(--card);border:1px solid var(--line);border-left-width:4px;
+    border-radius:10px;padding:16px 18px;margin:14px 0}
+  .crit{border-left-color:var(--crit)} .high{border-left-color:var(--high)}
+  .med{border-left-color:var(--med)} .low{border-left-color:var(--low)}
+  .ok{border-left-color:var(--ok)}
+  .tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.6px;
+    text-transform:uppercase;padding:2px 8px;border-radius:20px;margin-right:8px;vertical-align:2px}
+  .t-crit{background:rgba(255,93,93,.15);color:var(--crit)}
+  .t-high{background:rgba(255,159,67,.15);color:var(--high)}
+  .t-med{background:rgba(255,210,63,.15);color:var(--med)}
+  .t-low{background:rgba(77,212,172,.15);color:var(--low)}
+  .t-ok{background:rgba(54,194,117,.15);color:var(--ok)}
+  .meta{color:var(--muted);font-size:13px;margin:8px 0 0}
+  .ev{margin:10px 0 0;padding:10px 12px;background:#11141b;border:1px solid var(--line);
+    border-radius:8px;font-size:13.5px}
+  .ev b{color:#fff}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13.5px}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left}
+  th{background:#1c212b;color:#cdd6e8}
+  .fix{color:#bfe3cf}
+  ul{margin:8px 0 0;padding-left:20px} li{margin:4px 0}
+  .summary-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:22px 0 8px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center}
+  .stat .n{font-size:26px;font-weight:800;line-height:1}
+  .stat .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:6px}
+  .foot{color:var(--muted);font-size:12.5px;margin-top:40px;border-top:1px solid var(--line);padding-top:16px}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Análisis de consistencia de la memoria del TFM</h1>
+  <p class="sub">Contraste entre los archivos LaTeX de la memoria y el estado real del repositorio <code>TFM/</code> · Generado el 2026-06-05</p>
+
+  <p>Se analizaron exclusivamente los fuentes LaTeX que reflejan el estado actual de la memoria
+  (<code>main.tex</code>, <code>chapters/abstract.tex</code>, <code>introduccion.tex</code>,
+  <code>desarrollo.tex</code>, <code>conclusiones.tex</code> y <code>bibliografia.bib</code>),
+  ignorando los <code>.md</code> temporales. Se contrastaron contra el código
+  (<code>pet_reconstruction/src/</code>), la configuración, los checkpoints, las evaluaciones
+  y el README. A continuación, los hallazgos ordenados por severidad, con evidencia trazable.</p>
+
+  <div class="summary-grid">
+    <div class="stat"><div class="n" style="color:var(--crit)">2</div><div class="l">Críticas</div></div>
+    <div class="stat"><div class="n" style="color:var(--high)">2</div><div class="l">Altas</div></div>
+    <div class="stat"><div class="n" style="color:var(--med)">3</div><div class="l">Medias</div></div>
+    <div class="stat"><div class="n" style="color:var(--low)">3</div><div class="l">Bajas</div></div>
+    <div class="stat"><div class="n" style="color:var(--ok)">2</div><div class="l">Correctas</div></div>
+  </div>
+
+  <!-- ================= TÉCNICAS ================= -->
+  <h2>A. Inconsistencias técnicas (memoria ↔ código)</h2>
+
+  <div class="card crit">
+    <span class="tag t-crit">Crítica</span>
+    <h3 style="display:inline">T1 · Número de épocas de entrenamiento PET: la memoria dice 30, el experimento real fueron 100</h3>
+    <p class="meta">La memoria afirma de forma repetida que los modelos PET se entrenan durante <b>30 épocas</b>,
+    pero todo el resto del repositorio (config, checkpoints, tabla de resultados y README) corresponde a <b>100 épocas</b>.</p>
+    <div class="ev">
+      <b>En la memoria:</b> <code>desarrollo.tex:879</code> «Se entrena durante 30 épocas…»;
+      <code>:1080</code> «≈75 horas por pipeline para 30 épocas y 150 horas en total»;
+      <code>:1167</code> «…30 épocas».<br>
+      <b>En el repo:</b> <code>config.py:78</code> <code>num_epochs = 100</code>;
+      checkpoints reales hasta <code>checkpoint-epoch-099</code>;
+      la propia <b>tabla de resultados</b> (<code>desarrollo.tex:1042</code>) reporta épocas <b>50 y 100</b>;
+      <code>README.md:96</code> «100 epochs».
+    </div>
+    <p class="fix"><b>Corrección:</b> sustituir «30 épocas» por «100 épocas» en las tres ubicaciones y
+    rehacer el presupuesto temporal (las 75 h/150 h se calcularon para 30 épocas; con 100 épocas el cálculo inicial sobre MPS también cambia).
+    Nótese que <code>main.py</code> y el README aún usan <code>checkpoint-epoch-029</code> como ejemplo canónico: conviene actualizarlo a <code>-099</code> por coherencia narrativa.</p>
+  </div>
+
+  <div class="card crit">
+    <span class="tag t-crit">Crítica</span>
+    <h3 style="display:inline">T2 · Dos líneas base existen en el código pero no aparecen en la memoria</h3>
+    <p class="meta">El código implementa <b>cuatro</b> pipelines; la memoria describe solo <b>dos</b>.</p>
+    <div class="ev">
+      <b>En el repo:</b> <code>config.py</code> y <code>main.py:50</code> definen
+      <code>supervised</code>, <code>unconditional</code>, <code>regression</code> (RegressionUNetConfig — «Línea base A»: la misma U-Net sin difusión, ablación del paradigma)
+      y <code>cnn</code> (CNNConfig — RED-CNN, «Línea base B»: ablación de la familia arquitectónica).
+      El <code>README.md:3-8</code> los documenta los cuatro.<br>
+      <b>En la memoria:</b> solo se describen Pipeline A (supervisado) y Pipeline B (no condicional / DPS).
+      El listado «Estructura del código» (<code>desarrollo.tex:1180-1197</code>) omite por completo los módulos
+      <code>model_regression.py</code>, <code>train_regression.py</code>, <code>reconstruct_regression.py</code>,
+      <code>model_cnn.py</code>, <code>train_cnn.py</code>, <code>reconstruct_cnn.py</code>.
+    </div>
+    <p class="fix"><b>Corrección:</b> Estas dos ablaciones son una <b>fortaleza metodológica real</b> (aíslan «¿aporta la difusión?» frente a «¿aporta la arquitectura?»). Documentarlas eleva el rigor del trabajo: añadir su descripción al capítulo de PET y a las tablas comparativas. Si finalmente no se entrenan/usan, conviene <b>retirarlas del código</b> o declararlas explícitamente como trabajo no finalizado, para que código y memoria cuenten la misma historia.</p>
+  </div>
+
+  <div class="card high">
+    <span class="tag t-high">Alta</span>
+    <h3 style="display:inline">T3 · El resultado central anunciado (A vs. B) está incompleto experimentalmente</h3>
+    <p class="meta">La memoria presenta «comparar Pipeline A y Pipeline B sobre el mismo test» como uno de sus resultados centrales,
+    pero solo el Pipeline A está entrenado y evaluado hasta el final.</p>
+    <div class="ev">
+      <b>Pipeline A (supervisado):</b> completo — checkpoints 9→99, evaluaciones <code>epoch049_test</code> y <code>epoch099_test</code> con <code>summary.json</code>.<br>
+      <b>Pipeline B (unconditional/DPS):</b> solo checkpoints <code>epoch-009</code> y <code>epoch-019</code> (≈20 épocas), <b>sin evaluación</b>.
+      Coherente con los <code>\todo</code> de <code>desarrollo.tex:1061</code> y <code>conclusiones.tex:19</code>.<br>
+      <b>Líneas base:</b> <code>checkpoints/regression_unet/</code> y <code>checkpoints/cnn_redcnn/</code> solo contienen <code>logs/</code> (TensorBoard), <b>sin ningún</b> <code>checkpoint-epoch-*</code> → no entrenadas a término.
+    </div>
+    <p class="fix"><b>Implicación de entrega:</b> a fecha de hoy solo hay resultados sólidos del Pipeline A. Hay que decidir pronto: (a) terminar el entrenamiento+evaluación de B (y opcionalmente las dos líneas base), o (b) reencuadrar la contribución para no prometer una comparativa que no está soportada por datos.</p>
+  </div>
+
+  <div class="card high">
+    <span class="tag t-high">Alta</span>
+    <h3 style="display:inline">T4 · Cifra de «pasos de gradiente» incompatible con el batch declarado</h3>
+    <div class="ev">
+      <b>En la memoria:</b> <code>desarrollo.tex:879-883</code> «30 épocas ≈ <b>1,1×10⁶ pasos de gradiente</b> sobre las ~1,5×10⁵ slices», con batch efectivo 32.<br>
+      <b>Aritmética:</b> 1,5×10⁵ slices × 30 épocas ÷ 32 ≈ <b>1,4×10⁵</b> pasos (≈8× menos). La cifra 1,1×10⁶ solo cuadra si se usa batch 4 (el micro-batch de MPS), no el batch efectivo 32.
+      Con la corrección de T1 (100 épocas, batch 32): ≈ <b>4,7×10⁵</b> pasos.
+    </div>
+    <p class="fix"><b>Corrección:</b> recalcular la cifra de forma coherente con 100 épocas y batch efectivo 32.</p>
+  </div>
+
+  <div class="card med">
+    <span class="tag t-med">Media</span>
+    <h3 style="display:inline">T5 · Épocas del experimento de mariposas: memoria 100, config 200</h3>
+    <div class="ev">
+      <b>Memoria:</b> <code>desarrollo.tex:386</code> «durante 100 épocas»; las figuras usan checkpoints hasta la época 100 (<code>256pix_0099.png</code>).<br>
+      <b>Repo:</b> <code>butterfly_generation/src/config.py:8</code> <code>num_epochs = 200</code>.
+    </div>
+    <p class="fix"><b>Corrección:</b> reconciliar. Si realmente se entrenó hasta 100, dejar <code>num_epochs=100</code> en config (o documentar que se detuvo antes); si se entrenó a 200, corregir la memoria. La frase «se estabilizan en la época 100» sugiere que 100 es el valor real.</p>
+  </div>
+
+  <div class="card med">
+    <span class="tag t-med">Media</span>
+    <h3 style="display:inline">T6 · Listado «Estructura del código» desactualizado</h3>
+    <div class="ev">
+      <code>desarrollo.tex:1180-1197</code> lista <code>model_supervised.py # UNet builder</code>, pero el <b>builder compartido real</b> es <code>_unet_builder.py</code>.
+      Faltan además: <code>_train_engine.py</code>, <code>_train_engine_regression.py</code>, los 6 módulos de las dos líneas base (regression/cnn),
+      <code>experiments.py</code>, <code>preview_reconstruction.py</code>, <code>visualize_dataset.py</code> y <code>visualize_reconstruction.py</code>.
+    </div>
+    <p class="fix"><b>Corrección:</b> regenerar el listado a partir del árbol real de <code>src/</code> (el bloque del README §5 es buena referencia, aunque tampoco incluye baselines).</p>
+  </div>
+
+  <div class="card med">
+    <span class="tag t-med">Media</span>
+    <h3 style="display:inline">T7 · Descripción de <code>--smoke</code> mezcla un flag que no le corresponde</h3>
+    <div class="ev">
+      <code>desarrollo.tex:1199</code> «<code>--smoke</code> (50 pacientes, 5 épocas, resolución 128×128)».
+      En realidad <code>apply_smoke_overrides()</code> (<code>config.py:189</code>) solo fija resolución 128² y 5 épocas;
+      la reducción a 50 pacientes es el flag independiente <code>--limit 50</code> (el README §1 los separa correctamente).
+    </div>
+    <p class="fix"><b>Corrección:</b> «<code>--smoke</code> (128², 5 épocas), combinable con <code>--limit 50</code>».</p>
+  </div>
+
+  <div class="card low">
+    <span class="tag t-low">Baja</span>
+    <h3 style="display:inline">T8 · Ubicación de la caché de datos vs. lo que afirma CLAUDE.md</h3>
+    <div class="ev">
+      <code>CLAUDE.md</code> dice que «el código activo de <code>pet_reconstruction/</code> usa su propio <code>data/</code> y <code>checkpoints/</code>».
+      Pero <code>config.py:13,30-31</code> ancla la caché y los splits a la <b>raíz del repo</b> (<code>parents[2]</code> → <code>TFM/data/pet_cache</code>, <code>TFM/data/splits.json</code>).
+      Los checkpoints sí son relativos al CWD (<code>output_root = Path("checkpoints")</code> → <code>pet_reconstruction/checkpoints</code>).
+    </div>
+    <p class="fix"><b>Nota:</b> es una imprecisión de <code>CLAUDE.md</code> (no de la memoria LaTeX), pero conviene corregirla para no confundir.</p>
+  </div>
+
+  <div class="card low">
+    <span class="tag t-low">Baja</span>
+    <h3 style="display:inline">T9 · Artefactos sueltos en el repo</h3>
+    <div class="ev">
+      Coexisten dos cachés: <code>data/pet_cache/</code> y <code>data/compressed_pet_cache/</code> (¿duplicado/residual?).
+      Existe una evaluación <code>evaluations/lowdose_baseline_test/</code> (la baja dosis «en bruto» como referencia no-op, PSNR_fg 24,56 dB) que <b>no se menciona</b> en la sección de evaluación de la memoria, pese a ser un buen punto de comparación.
+      Ficheros nuevos sin trackear: <code>Dockerfile</code>, <code>docker-compose.yaml</code>, <code>.dockerignore</code> (no documentados en la memoria, pero relevantes para reproducibilidad).
+    </div>
+    <p class="fix"><b>Sugerencia:</b> incluir el baseline no-op en la tabla como fila de referencia, y mencionar la dockerización en infraestructura si se quiere reflejar el flujo real.</p>
+  </div>
+
+  <div class="card low">
+    <span class="tag t-low">Baja</span>
+    <h3 style="display:inline">T10 · Recuento de parámetros y batch de inferencia (verificar)</h3>
+    <div class="ev">
+      <b>Parámetros:</b> la memoria afirma «≈114 millones» (<code>desarrollo.tex:790</code>); el README dice «~10⁸». Son coherentes, pero no se pudo recomputar aquí (sin entorno con <code>diffusers</code>). Verificar el número exacto antes de la defensa.<br>
+      <b>Batch de inferencia:</b> <code>conclusiones.tex:53</code> menciona «batch de inferencia de 8», mientras los <code>summary.json</code> de evaluación registran <code>inference_batch_size=64</code>. Son contextos distintos (reconstrucción local vs. evaluación en GPU), pero conviene unificar el dato citado.
+    </div>
+  </div>
+
+  <!-- ================= ORGANIZATIVAS ================= -->
+  <h2>B. Estado organizativo (de cara a la entrega del TFM)</h2>
+
+  <div class="card high">
+    <span class="tag t-high">Alta</span>
+    <h3 style="display:inline">O1 · Secciones obligatorias del TFM todavía en <code>\todo</code></h3>
+    <p class="meta">Bloques estructurales imprescindibles siguen siendo marcadores de posición:</p>
+    <table>
+      <tr><th>Sección</th><th>Ubicación</th><th>Estado</th></tr>
+      <tr><td>Abstract (inglés)</td><td>abstract.tex:8</td><td>Íntegramente <code>\todo</code></td></tr>
+      <tr><td>Motivación e interés</td><td>introduccion.tex:32</td><td><code>\todo</code></td></tr>
+      <tr><td>Objetivos</td><td>introduccion.tex:40</td><td><code>\todo</code></td></tr>
+      <tr><td>Estructura de la memoria</td><td>introduccion.tex:98</td><td><code>\todo</code></td></tr>
+      <tr><td>Conclusiones · Resumen del trabajo</td><td>conclusiones.tex:10</td><td><code>\todo</code></td></tr>
+      <tr><td>Conclusiones · Resultados principales</td><td>conclusiones.tex:19,25</td><td><code>\todo</code></td></tr>
+      <tr><td>Reflexión final</td><td>conclusiones.tex:112</td><td><code>\todo</code></td></tr>
+    </table>
+    <p class="fix"><b>Prioridad:</b> Abstract, Objetivos y Estructura son lo primero que lee un tribunal. El cuerpo técnico (marco teórico, mariposas, PET) está notablemente maduro; el cuello de botella es el «andamiaje» de inicio y cierre.</p>
+  </div>
+
+  <div class="card med">
+    <span class="tag t-med">Media</span>
+    <h3 style="display:inline">O2 · <code>\todo</code> de contenido técnico pendientes de decisión</h3>
+    <ul>
+      <li><code>desarrollo.tex:1061</code> — añadir la columna del Pipeline B a la tabla de resultados e insertar las figuras 4-panel (depende de T3).</li>
+      <li><code>desarrollo.tex:1169</code> — registrar el tiempo real y el coste total en RunPod (presupuesto de infraestructura sin cerrar).</li>
+      <li><code>desarrollo.tex:49,143,149,189</code> — decisiones abiertas sobre figuras-resumen, profundidad matemática (equivalencia ε ↔ score) y atribución histórica.</li>
+    </ul>
+  </div>
+
+  <div class="card low">
+    <span class="tag t-low">Baja</span>
+    <h3 style="display:inline">O3 · Estado del arte en formato lista, no en prosa</h3>
+    <p class="meta"><code>introduccion.tex:56-93</code> presenta el estado del arte como viñetas cronológicas con fechas en negrita.
+    Es correcto como inventario, pero para la versión final conviene hilarlo en prosa que conecte cada referencia con las decisiones de diseño del Capítulo de PET (varias ya se citan: <code>bjrai2024</code>, <code>chung2023dps</code>…).</p>
+  </div>
+
+  <!-- ================= CORRECTO ================= -->
+  <h2>C. Aspectos verificados como correctos</h2>
+
+  <div class="card ok">
+    <span class="tag t-ok">OK</span>
+    <h3 style="display:inline">V1 · Tabla de resultados del Pipeline A fiel a los datos</h3>
+    <div class="ev">
+      Todos los valores de <code>tab:pet-supervisado</code> (<code>desarrollo.tex:1044-1051</code>) coinciden <b>exactamente</b> con
+      <code>evaluations/supervised/epoch049_test/summary.json</code> y <code>epoch099_test/summary.json</code>
+      (PSNR_fg 29,94→30,20; PSNR_whole 34,52→35,32; SSIM, NRMSE y errores de intensidad incluidos). 38 pacientes de test, 24 472 slices. Transcripción impecable.
+    </div>
+  </div>
+
+  <div class="card ok">
+    <span class="tag t-ok">OK</span>
+    <h3 style="display:inline">V2 · Bibliografía y datos base consistentes</h3>
+    <div class="ev">
+      Las <b>18</b> claves <code>\cite</code> usadas están todas definidas en <code>bibliografia.bib</code> (sin referencias rotas ni huérfanas).
+      El recuento de «371 pares» (memoria) coincide con el dataset real: 371 ficheros en <code>dose_Full/</code> y 371 en <code>dose_20/</code>.
+      La arquitectura descrita (atención solo en el 5º nivel, canales 128-512) coincide con <code>_unet_builder.py</code>.
+      La normalización sin fuga de full-dose (<code>arcsinh</code>, <code>M</code>=p99,5, <code>k</code>=10, bbox de baja dosis) coincide con <code>config.py</code> y el README.
+    </div>
+  </div>
+
+  <!-- ================= PLAN ================= -->
+  <h2>D. Lista de acción priorizada</h2>
+  <ol>
+    <li><b>[T1]</b> Cambiar «30 épocas» → «100 épocas» en las 3 ubicaciones y recalcular tiempos/pasos (arrastra a T4).</li>
+    <li><b>[T3/O1]</b> Decidir el alcance experimental final: ¿se entrena/evalúa el Pipeline B (y baselines) o se reencuadra la contribución? Esto define qué prometen el Abstract y los Objetivos.</li>
+    <li><b>[T2]</b> Documentar (o retirar) las dos líneas base regression/RED-CNN para que código y memoria coincidan.</li>
+    <li><b>[O1]</b> Redactar Abstract, Motivación, Objetivos y Estructura (hoy en <code>\todo</code>).</li>
+    <li><b>[T5,T6,T7]</b> Correcciones puntuales: épocas de mariposas, listado de código, descripción de <code>--smoke</code>.</li>
+    <li><b>[O2]</b> Cerrar el presupuesto de RunPod (tiempo + coste real) y completar tabla/figuras del Pipeline B.</li>
+    <li><b>[T9,T10]</b> Limpieza de artefactos y verificación del recuento exacto de parámetros.</li>
+  </ol>
+
+  <p class="foot">
+    Veredicto general: el <b>cuerpo técnico</b> de la memoria (marco teórico, mariposas, diseño del sistema PET, justificación de cada decisión) está sólido, bien fundamentado y mayormente fiel al código. Los riesgos de entrega se concentran en (1) el desfase 30↔100 épocas, (2) un diseño experimental implementado en código (4 pipelines) más ambicioso que el narrado (2 pipelines), con el resultado central A↔B aún incompleto, y (3) el andamiaje obligatorio del TFM (abstract, objetivos, conclusiones) todavía en blanco. Ninguno es estructural: son cierres de redacción y decisiones de alcance, no rediseños.
+  </p>
+
+</div>
+</body>
+</html>
