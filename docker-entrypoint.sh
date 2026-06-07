@@ -107,11 +107,11 @@ else
         log "Reconstruyendo pet_cache/ a partir de los shards (cat | tar) ..."
         rm -rf "${CACHE_DIR}"
         # split -d genera ...part-00, part-01, ...; el glob ordena correctamente.
-        cat "${DL_DIR}"/pet_cache.tar.part-* | tar xf - -C "${DATA_DIR}" || {
+        cat "${DL_DIR}"/pet_cache.tar.part-* | tar xf - -C "${DATA_DIR}" --exclude='._*' --exclude='.DS_Store' || {
             err "Fallo al reconstruir el tar."; exit 1; }
 
-        log "Verificando integridad (conteo de .pt) ..."
-        ACTUAL_PT_COUNT="$(find "${CACHE_DIR}" -name '*.pt' | wc -l | tr -d ' ')"
+        log "Verificando integridad (conteo de .pt, excluyendo AppleDouble) ..."
+        ACTUAL_PT_COUNT="$(find "${CACHE_DIR}" -name '*.pt' -not -name '._*' | wc -l | tr -d ' ')"
         if [ "${ACTUAL_PT_COUNT}" != "${EXPECTED_PT_COUNT}" ]; then
             err "Conteo de .pt = ${ACTUAL_PT_COUNT}, esperado ${EXPECTED_PT_COUNT}. NO limpio los shards."
             err "Revisa la descarga en ${DL_DIR} antes de reintentar."
