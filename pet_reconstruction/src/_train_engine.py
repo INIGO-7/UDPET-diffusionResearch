@@ -133,6 +133,12 @@ def run_training(
         model, optimizer, train_loader, lr_scheduler
     )
 
+    # Forward-only compiled handle. It SHARES parameters with `model`, so EMA,
+    # the optimizer, gradient clipping, save_state/load_state and save_pretrained
+    # all keep operating on `model` (clean state-dict keys, resume unaffected);
+    # only the training forward goes through the compiled graph.
+    forward_model = torch.compile(model) if getattr(cfg.train, "use_compile", False) else model
+
     ema = (
         EMAModel(model.parameters(), decay=cfg.train.ema_decay)
         if cfg.train.use_ema
@@ -178,7 +184,7 @@ def run_training(
             v_target = noise_scheduler.get_velocity(clean, noise, timesteps)
 
             with accelerator.accumulate(model):
-                v_pred = model(model_input, timesteps, return_dict=False)[0]
+                v_pred = forward_model(model_input, timesteps, return_dict=False)[0]
                 loss = F.mse_loss(v_pred, v_target)
                 accelerator.backward(loss)
                 if accelerator.sync_gradients:

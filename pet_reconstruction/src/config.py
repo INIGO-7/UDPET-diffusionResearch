@@ -88,6 +88,13 @@ class TrainConfig:
     # bf16 on Blackwell tensor cores: ~2x throughput vs fp32 with no NaN risk.
     mixed_precision: str = "bf16"
 
+    # torch.compile the forward pass (TorchInductor kernel fusion). ~1.3-2x on a
+    # compute-bound UNet. Compilation is isolated to a forward-only handle, so it
+    # never touches the saved/loaded state — resume and checkpoint loading are
+    # unaffected. A failed Inductor compile surfaces loudly on iteration 1 (no
+    # silent corruption); set this to False to fall back to eager.
+    use_compile: bool = True
+
     # --- DataLoader ---
     num_workers: int = 4
     pin_memory: bool = False

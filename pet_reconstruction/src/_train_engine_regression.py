@@ -126,6 +126,12 @@ def run_regression_training(
         model, optimizer, train_loader, lr_scheduler
     )
 
+    # Forward-only compiled handle. It SHARES parameters with `model`, so EMA,
+    # the optimizer, gradient clipping, save_state/load_state and save_pretrained
+    # all keep operating on `model` (clean state-dict keys, resume unaffected);
+    # only the training forward goes through the compiled graph.
+    forward_model = torch.compile(model) if getattr(cfg.train, "use_compile", False) else model
+
     ema = (
         EMAModel(model.parameters(), decay=cfg.train.ema_decay)
         if cfg.train.use_ema
@@ -160,7 +166,7 @@ def run_regression_training(
             model_input = prepare_model_input(batch)
 
             with accelerator.accumulate(model):
-                pred = model_forward(model, model_input)
+                pred = model_forward(forward_model, model_input)
                 loss = F.mse_loss(pred, target)
                 accelerator.backward(loss)
                 if accelerator.sync_gradients:
