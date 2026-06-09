@@ -15,13 +15,16 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # --- Dependencias del sistema -------------------------------------------------
 # git: por si algún paquete lo necesita; libGL/glib: backends de matplotlib /
-# scikit-image que tiran de libs gráficas aunque uses Agg.
+# scikit-image que tiran de libs gráficas aunque uses Agg; build-essential:
+# torch.compile (Inductor/Triton) genera y compila kernels C/CUDA en runtime y
+# necesita un compilador de C (gcc) — sin él falla con "Failed to find C compiler".
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
         rsync \
         openssh-server \
         libgl1 \
         libglib2.0-0 \
+        build-essential \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /var/run/sshd
 
