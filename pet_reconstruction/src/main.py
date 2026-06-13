@@ -66,8 +66,6 @@ def main() -> None:
         choices=["supervised", "unconditional", "regression", "cnn"],
         required=True,
     )
-    # The remaining flags are passed through to the per-pipeline reconstruct script.
-    p_recon.add_argument("recon_args", nargs=argparse.REMAINDER)
 
     p_eval = subparsers.add_parser(
         "evaluate", help="Run inference + metrics on a held-out split."
@@ -77,7 +75,6 @@ def main() -> None:
         choices=["supervised", "unconditional", "regression", "cnn"],
         required=True,
     )
-    p_eval.add_argument("eval_args", nargs=argparse.REMAINDER)
 
     p_preview = subparsers.add_parser(
         "preview",
@@ -88,9 +85,33 @@ def main() -> None:
         choices=["supervised", "unconditional", "regression", "cnn"],
         required=True,
     )
-    p_preview.add_argument("preview_args", nargs=argparse.REMAINDER)
 
-    args = parser.parse_args()
+    p_slice = subparsers.add_parser(
+        "slice-recon",
+        help="Export clean full / low / recon PNGs for one slice (memoria figures).",
+    )
+    p_slice.add_argument(
+        "--pipeline",
+        choices=["supervised", "unconditional", "regression", "cnn"],
+        required=True,
+    )
+
+    p_mip = subparsers.add_parser(
+        "mip-recon",
+        help="Export full / low / recon MIP PNGs over one plane (memoria figures).",
+    )
+    p_mip.add_argument(
+        "--pipeline",
+        choices=["supervised", "unconditional", "regression", "cnn"],
+        required=True,
+    )
+
+    # Subcommands that wrap a per-pipeline script pass their remaining flags straight
+    # through. parse_known_args() collects those into `extra` (argparse.REMAINDER does
+    # NOT capture leading --options, so it cannot be used here).
+    args, extra = parser.parse_known_args()
+    if args.command in ("preprocess", "train") and extra:
+        parser.error(f"unrecognized arguments: {' '.join(extra)}")
 
     if args.command == "preprocess":
         from .config import DataConfig
@@ -139,7 +160,7 @@ def main() -> None:
             from .reconstruct_cnn import main as recon_main
         else:
             from .reconstruct_unconditional import main as recon_main
-        sys.argv = [sys.argv[0], *(args.recon_args or [])]
+        sys.argv = [sys.argv[0], *extra]
         recon_main()
         return
 
@@ -148,7 +169,7 @@ def main() -> None:
 
         # The pipeline flag is consumed here AND re-injected for the inner parser,
         # so the user can write the same flag set as if calling evaluate.py directly.
-        passthrough = ["--pipeline", args.pipeline, *(args.eval_args or [])]
+        passthrough = ["--pipeline", args.pipeline, *extra]
         sys.argv = [sys.argv[0], *passthrough]
         eval_main()
         return
@@ -156,9 +177,25 @@ def main() -> None:
     if args.command == "preview":
         from .preview_reconstruction import main as preview_main
 
-        passthrough = ["--pipeline", args.pipeline, *(args.preview_args or [])]
+        passthrough = ["--pipeline", args.pipeline, *extra]
         sys.argv = [sys.argv[0], *passthrough]
         preview_main()
+        return
+
+    if args.command == "slice-recon":
+        from .slice_recon import main as slice_main
+
+        passthrough = ["--pipeline", args.pipeline, *extra]
+        sys.argv = [sys.argv[0], *passthrough]
+        slice_main()
+        return
+
+    if args.command == "mip-recon":
+        from .mip_recon import main as mip_main
+
+        passthrough = ["--pipeline", args.pipeline, *extra]
+        sys.argv = [sys.argv[0], *passthrough]
+        mip_main()
         return
 
 
