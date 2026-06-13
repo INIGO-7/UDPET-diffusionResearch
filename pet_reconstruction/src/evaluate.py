@@ -53,10 +53,9 @@ from .reconstruct_unconditional import (
     _build_ddim_scheduler as _build_sched_unc,
     ddim_dps_sample,
 )
-from .preprocess import prepare_low_dose
-from .splits import load_splits, match_low_dose
+from .splits import load_splits
 from .visualize import four_panel_figure
-from .volume_io import asinh_denormalize, load_volume
+from .volume_io import asinh_denormalize
 
 
 def _pick_device() -> str:
@@ -79,6 +78,8 @@ def evaluate_patient(
     scheduler,
     device: str,
     pipeline: str,
+    M: float,
+    k: float,
     inference_batch_size: int = 4,
     figure_slice_idx: int | None = None,
     figure_dir: Path | None = None,
@@ -101,18 +102,12 @@ def evaluate_patient(
         f"Mismatched cache for {patient_id}: {len(full_paths)} full vs {len(low_paths)} low"
     )
 
-    # M is estimated from the low-dose volume AT RUNTIME (never read from
-    # metadata), matching exactly what reconstruct does on an unseen scan. The
-    # cached slices were normalized with this same low-derived M, so denormalizing
-    # back to counts stays exact.
-    low_path = match_low_dose(
-        patient_id,
-        cfg.data.raw_dataset_dir / cfg.data.low_dose_subdir,
-        cfg.data.low_suffix_variants,
-    )
-    low_vol, _, _ = load_volume(low_path)
-    M = prepare_low_dose(low_vol, cfg.data)["M"]
-    k = cfg.data.asinh_k
+    # M and k are read from metadata.json (passed in by the caller). The cached
+    # slices were normalized with this same low-derived M, so denormalizing back
+    # to counts stays exact. metadata's M is bit-identical to recomputing it from
+    # the raw low-dose volume (same prepare_low_dose code path), so evaluate does
+    # NOT need the raw NIfTIs present — unlike reconstruct, which recomputes M at
+    # runtime to support genuinely unseen scans.
 
     per_slice: list[dict] = []
 
@@ -321,6 +316,8 @@ def main() -> None:
         slice_rows = evaluate_patient(
             pid, cfg, unet, scheduler, device,
             pipeline=args.pipeline,
+            M=metadata[pid]["M"],
+            k=metadata[pid]["k"],
             inference_batch_size=args.inference_batch_size,
             figure_slice_idx=fig_slice,
             figure_dir=figure_dir if pid in figure_patients else None,
