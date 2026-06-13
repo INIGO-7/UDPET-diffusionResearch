@@ -1,0 +1,846 @@
+% =====================================================================
+% Capítulo 4 — Reconstrucción de PET de dosis baja
+% =====================================================================
+\chapter{Modelos de difusión para reconstrucción de escaneos PET}
+\label{cap:pet}
+
+Este capítulo desarrolla la contribución principal del trabajo: un
+sistema completo de reconstrucción de PET de dosis baja. El problema
+se formuló en la \Cref{subsec:pet-problema-inverso} como un problema
+inverso —recuperar el escaneo de dosis completa $\mathbf{x}$ a partir
+de la observación degradada $\mathbf{y}$, adquirida con un veinteavo
+de la dosis— y la \Cref{subsec:difusion-condicional} presentó las dos
+familias de soluciones basadas en difusión que coexisten en la
+literatura: el condicionamiento supervisado y el prior no condicional
+con guiado de medición. Siguiendo la trayectoria que dibuja el estado
+del arte (\Cref{sec:estado-del-arte}), se decide construir
+\textbf{ambos enfoques en paralelo} y compararlos sobre el mismo
+conjunto de test, añadiendo además dos líneas base discriminativas
+que delimitan la aportación real del paradigma de difusión. El diseño
+persigue dos objetivos: ser \emph{defendible científicamente} —cada
+decisión está justificada por la literatura o por los fundamentos
+teóricos del \Cref{cap:marco-teorico}— y \emph{ejecutable con el
+presupuesto disponible}.
+
+El capítulo sigue el ciclo de vida natural del sistema: análisis del
+conjunto de datos (\Cref{sec:pet-datos}), preprocesamiento y formato
+final (\Cref{sec:pet-preprocesado}), metodología de entrenamiento
+—incluido el entorno de ejecución en la nube—
+(\Cref{sec:pet-entrenamiento}), arquitectura y enfoque de cada
+\textit{pipeline} (\Cref{sec:pet-arquitectura}), métricas de
+evaluación (\Cref{sec:pet-metricas}), líneas base de referencia
+(\Cref{sec:pet-baselines}), comparación de resultados
+(\Cref{sec:pet-resultados}) y análisis de costes
+(\Cref{sec:pet-costes}).
+
+% ---------------------------------------------------------------------
+\section{El conjunto de datos: análisis de los volúmenes NIfTI}
+\label{sec:pet-datos}
+
+Los datos proceden del \textit{Ultra-low Dose PET Imaging
+Challenge} (UDPET)~\cite{udpet2025}, un desafío internacional que
+publica pares de escaneos PET de cuerpo entero adquiridos con dosis
+completa y reconstruidos también a partir de fracciones reducidas de
+los eventos detectados. El conjunto empleado consta de \textbf{371
+pares} de volúmenes: para cada paciente se dispone de la versión de
+dosis completa y la versión con dosis reducida a un veinteavo (1/20).
+
+Los volúmenes se distribuyen en formato \textbf{NIfTI}
+(\textit{Neuroimaging Informatics Technology Initiative}), el formato
+estándar de intercambio en neuroimagen e imagen médica volumétrica:
+cada fichero \texttt{.nii.gz} empaqueta el \textit{array}
+tridimensional de intensidades junto con una matriz afín de
+$4 \times 4$ que sitúa los vóxeles en el espacio físico del escáner.
+El análisis exploratorio de los volúmenes arroja las siguientes
+características:
+
+\begin{itemize}[leftmargin=*]
+    \item Cada volumen tiene forma $(440, 440, 644)$ —cortes axiales
+    de $440 \times 440$ apilados a lo largo del eje craneocaudal—
+    con vóxeles isotrópicos de $1{,}65$~mm.
+    \item Las matrices afines coinciden exactamente entre los
+    volúmenes pareados, lo cual confirma que la reducción de dosis se
+    aplica sobre el mismo \textit{grid} espacial sin re-muestreo
+    intermedio: los pares están perfectamente registrados a nivel de
+    vóxel.
+    \item Se asume que cada fichero corresponde a un paciente
+    independiente; el patrón de los \textit{timestamps} en los
+    nombres es consistente con un proceso de reconstrucción por lotes
+    en el operador, no con \textit{frames} dinámicos de un mismo
+    paciente.
+\end{itemize}
+
+Las estadísticas de intensidad relevantes para el diseño del
+preprocesamiento, calculadas sobre 5 volúmenes de referencia son:
+
+\begin{itemize}[leftmargin=*]
+    \item La distribución de intensidades en \textit{foreground}
+    (vóxeles con señal) es muy asimétrica: mediana de 251 cuentas,
+    percentil 99 en torno a 9.600, percentil 99,9 en torno a 19.000
+    y máximo cercano a $1{,}3 \times 10^{5}$. Es la cola pesada
+    típica de una señal de recuento con regiones calientes (vejiga,
+    corazón, lesiones).
+    \item Aproximadamente el 18\,\% de los vóxeles del volumen son
+    \textit{foreground} (valor estrictamente positivo); el resto es
+    fondo exactamente nulo, fuera del cuerpo del paciente.
+    \item En la región de \textit{foreground}, la transformación
+    $\log(1+x)$ aproxima una distribución $\mathcal{N}(4{,}7,\,
+    2{,}6)$, lo cual sugiere que una compresión logarítmica produce
+    un rango bien centrado para el modelo.
+    \item La desviación típica del residuo \texttt{low\,-\,full}
+    restringido al \textit{foreground} es del orden del 31\,\% de la
+    media de señal, lo cual cuantifica el nivel de degradación
+    introducido por la reducción de dosis —el ruido Poisson de
+    recuento descrito en la \Cref{sec:pet-ruido}—.
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\section{Preprocesado y formato final}
+\label{sec:pet-preprocesado}
+
+El preprocesamiento convierte cada par de volúmenes NIfTI en una
+colección de cortes axiales 2D normalizados, listos para el
+entrenamiento. Las decisiones, en orden de aplicación, son las
+siguientes.
+
+\paragraph{Unidad espacial.}
+Se trabaja con \textit{slices} axiales en 2D puro. Un U-Net 3D
+sobre volúmenes de $440^2 \times 644$ es inviable con el hardware
+disponible; las variantes 2.5D (canales adicionales con
+\textit{slices} contiguos) se reservan como extensión natural si la
+formulación 2D muestra inconsistencias inter-\textit{slice}
+(\Cref{sec:lineas-futuras}).
+
+\paragraph{Recorte y reescalado.}
+Para cada volumen se calcula una \textit{bounding box} única a
+partir del \textit{foreground} de la versión de \textbf{dosis
+baja}, y se aplica idéntica al volumen pareado de dosis completa,
+garantizando que ambos comparten exactamente el mismo recorte.
+Derivar el recorte de la dosis baja —y no de la completa— evita
+cualquier fuga de información del objetivo hacia la entrada: la
+\textit{bounding box}, la escala de normalización $M$ y el filtrado
+de \textit{slices} se calculan todos a partir de la observación de
+dosis baja, la única señal disponible en inferencia para un
+volumen no visto. Cada \textit{slice} axial recortado se
+redimensiona a $256 \times 256$ píxeles mediante interpolación
+bilineal.
+
+La resolución de trabajo $256^2$ es menor que la nativa
+($440 \times 440$). No es posible entrenar directamente sobre
+$440^2$: la arquitectura U-Net empleada tiene seis bloques —cinco
+operaciones de \textit{down}/\textit{upsampling}, $2^5 = 32$—, de
+modo que el lado de la imagen de entrada debe ser divisible entre
+32, y $440$ no lo es. Tamaños como $384$ o $416$ —más cercanos a
+la calidad nativa y divisibles entre 32— sí serían admisibles,
+pero no se han explorado: el coste de cualquier fase del
+entrenamiento crece de forma aproximadamente cuadrática con el
+lado de la imagen, y ya resulta elevado a $256^2$. La elección de
+$256^2$ equilibra fidelidad anatómica y coste computacional dentro
+del alcance del proyecto.
+
+\paragraph{Normalización per-volumen estabilizadora de varianza.}
+Las cuentas se mapean al rango $[-1, 1]$ mediante la
+transformación
+\begin{equation}
+    \mathbf{x}' = 2 \cdot
+        \frac{\operatorname{arcsinh}(\mathbf{x}/k)}
+             {\operatorname{arcsinh}(M/k)}
+        - 1,
+    \label{eq:asinh-norm}
+\end{equation}
+donde $k = 10$ actúa como codo suave entre el régimen lineal y
+el logarítmico, y $M$ es el percentil 99,5 del \textbf{volumen de
+dosis baja}. El mismo $M$ derivado de la dosis baja se aplica
+también al volumen pareado de dosis completa, de modo que ambos
+comparten escala y siguen siendo directamente comparables tras la
+normalización. Calcular $M$ exclusivamente sobre la dosis baja es
+esencial para no introducir fuga del objetivo: $M$ debe poder
+recomputarse en inferencia a partir de la única señal disponible,
+el escaneo de dosis baja de un volumen no visto. La función
+$\operatorname{arcsinh}$ es la transformación canónica
+estabilizadora de varianza para señales positivas de cola pesada
+con estructura aproximadamente Poisson: se comporta linealmente
+cerca de cero y logarítmicamente para valores grandes, sin la
+patología de $\log(0)$. Los parámetros $(M, k)$ se almacenan por
+volumen para invertir la transformación durante la evaluación.
+
+\paragraph{Elección del percentil de referencia.}
+La elección de $M$ como percentil 99,5 —y no como el máximo
+(percentil 100)— es deliberada. Si se fijara $M$ al valor más alto
+del volumen, un único vóxel atípico muy brillante podría
+desviarse mucho de la distribución y aplanar el resto de la
+imagen, perdiendo detalle en la masa de tejido. Por otra parte,
+los modelos de difusión asumen que los datos viven en $[-1, +1]$:
+es para esa banda para la que está ajustado el calendario de
+ruido (\Cref{subsec:schedules}). Los vóxeles que quedan bastante
+por encima de $+1$ están efectivamente fuera de distribución para
+el proceso de ruido hacia delante, y el modelo tiende a
+reconstruirlos peor (saturación suave / subestimación de la
+intensidad máxima). No se \textit{clippean} esos valores —dejarlos
+sobresalir por encima de $+1$ mantiene exacta la inversión de la
+transformación—, pero su proporción debe ser pequeña. Un análisis
+del porcentaje de \textit{foreground} mapeado por encima de $+1$
+para distintos percentiles arroja:
+\begin{center}
+\begin{tabular}{lc}
+\toprule
+Percentil & \% \textit{foreground} mapeado por encima de $+1$ \\
+\midrule
+90{,}0 & 10{,}00\,\% \\
+95{,}0 & 5{,}00\,\% \\
+99{,}0 & 1{,}00\,\% \\
+\textbf{99{,}5} & \textbf{0{,}50\,\%} (por defecto) \\
+99{,}9 & 0{,}10\,\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+Bajar el percentil dedicaría más del rango $[-1, +1]$ a la masa
+de vóxeles —lo cual podría mejorar las métricas estructurales en
+tejido blando (SSIM, contraste de intensidad media)— a costa de
+empeorar la fidelidad de intensidad máxima en regiones calientes
+y las métricas de preservación de intensidad en espacio de
+cuentas. El percentil 99,5 deja fuera únicamente un 0,5\,\% de
+\textit{foreground} —\textit{outliers} muy brillantes—, lo cual
+preserva la distribución original de los datos a la vez que los
+normaliza de forma efectiva.
+
+\paragraph{Filtrado de \textit{slices}.}
+Tras el recorte y la normalización, se conservan únicamente
+aquellos \textit{slices} axiales cuyo \textit{foreground} supera
+un umbral mínimo de ocupación ($1\%$ de píxeles por encima de un
+valor bajo). Los extremos vacíos del FOV se descartan para no
+penalizar al modelo con \textit{slices} triviales.
+
+\paragraph{Ausencia de aumento de datos.}
+El PET presenta asimetría clínica relevante —corazón en el lado
+izquierdo, hígado en el derecho, etcétera—; un volteo horizontal
+aleatorio induciría una lateralidad incorrecta en el modelo
+aprendido. El tamaño efectivo del conjunto de entrenamiento hace
+además innecesaria la augmentación para evitar sobreajuste.
+
+\paragraph{Particiones y formato final.}
+Los 371 volúmenes se dividen \emph{a nivel de paciente} en
+proporción $80 / 10 / 10$ —296 volúmenes de entrenamiento, 37 de
+validación y 38 de test— con semilla fija, y la asignación se
+persiste en un fichero JSON compartido por todos los
+\textit{pipelines} y líneas base, de modo que todos los modelos ven
+exactamente las mismas particiones. El preprocesamiento se ejecuta
+una única vez en modo \textit{offline}; cada \textit{slice}
+procesado se almacena como tensor PyTorch \texttt{.pt} en precisión
+\texttt{float16} para evitar la decodificación repetida de NIfTI en
+cada época. El resultado final es una caché de \textbf{477.690
+ficheros} \texttt{.pt} —238.845 pares de cortes
+dosis baja / dosis completa, unos 644 cortes conservados por
+paciente— con un tamaño total aproximado de 60~GB. De ellos,
+aproximadamente $1{,}9 \times 10^{5}$ pares pertenecen al conjunto
+de entrenamiento.
+
+% ---------------------------------------------------------------------
+\section{Metodología de entrenamiento}
+\label{sec:pet-entrenamiento}
+
+Esta sección reúne \emph{toda} la operativa de entrenamiento del
+proyecto: la configuración numérica y las técnicas de estabilización
+y aceleración (\Cref{subsec:pet-config}), y el entorno de ejecución
+profesional construido sobre la nube para ejecutar los experimentos
+de forma reproducible (\Cref{sec:pet-entorno-cloud}). Las secciones
+posteriores se remiten aquí cuando necesitan algún detalle del
+entrenamiento.
+
+\subsection{Configuración del entrenamiento}
+\label{subsec:pet-config}
+
+El paradigma de difusión combina tres elecciones que mejoran sobre
+la línea base del experimento de mariposas
+(\Cref{sec:mariposas-paradigma}), todas ellas definidas formalmente
+en el marco teórico:
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Predicción de velocidad}
+    (\textit{v-prediction}, \Cref{eq:v-def}), numéricamente estable
+    en los dos extremos del rango de \textit{timesteps}
+    (\Cref{subsec:parametrizaciones}). Su activación en
+    \texttt{diffusers} consiste en fijar
+    \texttt{prediction\_type="v\_prediction"} en el
+    \textit{scheduler}.
+    \item \textbf{Calendario cosenoidal} de ruido
+    (\Cref{eq:cosine-schedule}), con $T = 1000$ \textit{timesteps}
+    de entrenamiento.
+    \item \textbf{Pérdida MSE uniforme sobre $\mathbf{v}$}
+    (\Cref{eq:loss-v}), con el canal de condicionamiento presente u
+    omitido según el \textit{pipeline}
+    (\Cref{sec:pet-arquitectura}). Se opta por ponderación uniforme
+    sobre los \textit{timesteps}, dejando el reponderado
+    \textit{Min-SNR-$\gamma$}~\cite{hang2023minsnr} como mejora
+    candidata si la convergencia resultara insuficiente.
+\end{itemize}
+
+Los hiperparámetros de optimización, ajustados a la GPU de 32~GB
+empleada (\Cref{sec:pet-entorno-cloud}), son:
+
+\begin{itemize}[leftmargin=*]
+    \item Optimizador \texttt{AdamW} con tasa de aprendizaje
+    $\eta = 1{,}4 \times 10^{-4}$ y \textit{cosine warmup} de
+    500 pasos. El valor de $\eta$ está escalado por
+    $\sim\sqrt{32/16}$ sobre la línea base $10^{-4}$ del modelo de
+    mariposas, para acompañar el incremento de \textit{batch} sin
+    alterar la dinámica del entrenamiento.
+    \item \textit{Batch} de entrenamiento de 32 \textit{slices} con
+    acumulación de gradiente unitaria (\textit{batch} efectivo de
+    32). En el \textit{fallback} local sobre MPS se emplea
+    \textit{micro-batch} de 4 con acumulación de 4 pasos.
+    \item Recorte de gradientes a norma máxima $1{,}0$.
+    \item Se entrena durante \textbf{100 épocas}, lo cual equivale a
+    aproximadamente $6 \times 10^{5}$ pasos de gradiente sobre los
+    $\sim 1{,}9 \times 10^{5}$ pares de cortes de entrenamiento.
+\end{itemize}
+
+Sobre esta base se aplican cuatro técnicas de estabilización y
+aceleración:
+
+\paragraph{Media móvil exponencial de los pesos (EMA).}
+Se mantiene una copia sombra de los pesos del U-Net actualizada como
+media móvil exponencial con factor de decaimiento $0{,}9999$. Los
+pesos EMA —un promedio suavizado de la trayectoria de optimización—
+son los que se evalúan y se exportan como \textit{checkpoint} de
+inferencia; aportan típicamente $0{,}5$--$1$~dB adicionales de PSNR
+sin coste de entrenamiento. El estado EMA se registra junto al del
+optimizador, de modo que la reanudación de un entrenamiento
+interrumpido lo recupera intacto.
+
+\paragraph{Precisión mixta \texttt{bf16}.}
+El cómputo se ejecuta en \texttt{bfloat16} sobre los \textit{tensor
+cores} de la GPU, prácticamente el doble de \textit{throughput} que
+\texttt{float32} sin riesgo apreciable de desbordamiento numérico
+(el formato conserva el rango del \texttt{float32}). Se habilita
+además el modo TF32 para las multiplicaciones residuales en
+\texttt{float32}. En el \textit{fallback} local sobre MPS se
+mantiene \texttt{float32} puro, por las inestabilidades conocidas
+del \textit{backend} con \texttt{float16}.
+
+\paragraph{Compilación del modelo con \texttt{torch.compile}.}
+La pasada hacia delante del U-Net se compila con TorchInductor, el
+compilador JIT de PyTorch, que fusiona kernels y elimina
+lanzamientos redundantes de GPU; en un U-Net limitado por cómputo
+como el empleado, la mejora observada es de entre $1{,}3\times$ y
+$2\times$ en velocidad de entrenamiento. La compilación se aísla en
+un manejador exclusivo de la pasada hacia delante que comparte
+parámetros con el modelo original, de modo que el optimizador, la
+EMA, el recorte de gradientes y el guardado/carga de
+\textit{checkpoints} siguen operando sobre el modelo sin compilar:
+la aceleración no altera el formato de los \textit{checkpoints} ni
+la reanudación de entrenamientos.
+
+\paragraph{Validación durante el entrenamiento.}
+Como se observó en el experimento de mariposas
+(\Cref{sec:mariposas-aprendizajes}), la pérdida de entrenamiento es
+una mala señal de convergencia en difusión: el MSE sobre
+$\mathbf{v}$, promediado sobre \textit{timesteps} aleatorios, se
+satura en las primeras épocas mientras la calidad de imagen sigue
+mejorando. Por ello, en cada \textit{checkpoint} se ejecuta una
+validación \emph{de tarea final}: se reconstruye un subconjunto fijo
+de 16 cortes de validación —equiespaciados sobre todo el split para
+cubrir distintos niveles anatómicos— con el mismo procedimiento de
+inferencia que se usará en test, usando los pesos EMA, y se
+registran PSNR/SSIM/NRMSE contra el objetivo de dosis completa. La
+convergencia se declara cuando estas métricas se estancan. El
+generador aleatorio de la validación se aísla del de entrenamiento
+para no perturbar la reproducibilidad del bucle principal.
+
+Los \textit{checkpoints} se guardan cada 10 épocas en directorios
+autocontenidos (pesos EMA del U-Net en formato \texttt{diffusers},
+configuración del \textit{scheduler} y estado completo de
+entrenamiento), lo que permite tanto la inferencia directa como la
+reanudación exacta del entrenamiento tras una interrupción
+—condición imprescindible cuando se alquila cómputo por horas—.
+
+\subsection{Entorno de ejecución en la nube}
+\label{sec:pet-entorno-cloud}
+
+\subsubsection{Motivación: del portátil a la GPU dedicada}
+
+El plan inicial contemplaba ejecutar el entrenamiento en local,
+sobre el mismo MacBook Pro M4 Pro (24~GB de memoria unificada,
+PyTorch con \textit{backend} MPS) del experimento de mariposas. Las
+estimaciones lo descartaron: en MPS, forzado a \texttt{float32} y
+con \textit{batch} efectivo 16, el coste estimado era de
+aproximadamente \textbf{75~horas por \textit{pipeline}} de difusión,
+además de cerca de 2~horas por evaluación completa del conjunto de
+test. Más allá del tiempo bruto, 150~horas de entrenamiento
+sostenido acoplan el ordenador personal al proceso durante más de
+una semana, con cada interrupción (cierre de tapa, suspensión,
+reinicio) convertida en riesgo operativo. Se decidió migrar la fase
+PET a \textbf{RunPod}, un proveedor de GPU bajo demanda con tarifa
+proporcional al uso, y construir alrededor un entorno de ejecución
+reproducible cuyo diseño se describe a continuación.
+
+\subsubsection{Imagen Docker reproducible}
+
+Todo el entorno de software se encapsula en una imagen Docker
+construida sobre \texttt{python:3.13-slim}. Dos decisiones de diseño
+merecen comentario:
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{CUDA sin imagen base de NVIDIA.} Los
+    \textit{wheels} de PyTorch del índice \texttt{cu124} empaquetan
+    las bibliotecas CUDA necesarias, de modo que basta una imagen
+    base ligera de Python: el único requisito del host es el driver
+    NVIDIA, que RunPod provee. PyTorch se instala antes que el resto
+    de dependencias para que \texttt{pip} no resuelva por error la
+    variante de CPU, y la capa de dependencias se cachea separada
+    del código para acelerar las reconstrucciones de la imagen.
+    \item \textbf{Compilador de C en la imagen.} TorchInductor
+    (\texttt{torch.compile}, \Cref{subsec:pet-config}) genera y
+    compila kernels en tiempo de ejecución y necesita \texttt{gcc};
+    se incluye \texttt{build-essential} en la imagen, sin lo cual la
+    compilación falla al arrancar el entrenamiento.
+\end{itemize}
+
+La imagen \emph{no} hornea el código del proyecto: un
+\textit{entrypoint} idempotente lo clona desde GitHub al arrancar el
+contenedor, de modo que cada arranque parte del repositorio
+actualizado sin reconstruir la imagen. El mismo \textit{entrypoint}
+arranca un servidor SSH —inyectando la clave pública que RunPod
+expone por variable de entorno— antes de cualquier paso costoso,
+para poder conectarse mientras se prepara el entorno. Un fichero
+\texttt{docker-compose} permite validar la imagen y el
+\textit{entrypoint} en local (emulando \texttt{linux/amd64}) antes
+de desplegar.
+
+\subsubsection{Distribución del dataset preprocesado vía Hugging Face}
+
+Subir 60~GB de caché preprocesada a cada máquina efímera habría sido
+el cuello de botella del flujo. En su lugar, la caché completa
+(\Cref{sec:pet-preprocesado}) se empaqueta una única vez en
+\textit{shards} de \texttt{tar} y se publica —junto al fichero de
+particiones \texttt{splits.json}— en un repositorio \emph{privado}
+de Hugging Face Datasets. Al arrancar, el \textit{entrypoint}
+descarga los \textit{shards} con \texttt{hf\_transfer} (descarga
+paralela de alto ancho de banda), reconstruye la caché, y
+\textbf{verifica su integridad} comparando el número de ficheros
+\texttt{.pt} reconstruidos (477.690) con el esperado antes de borrar
+los \textit{shards}; si la cuenta no coincide, conserva la descarga
+para depuración y deja el contenedor vivo. Una marca en disco hace
+el proceso idempotente: los reinicios posteriores del pod detectan
+el dataset ya reconstruido y lo omiten.
+
+\subsubsection{Elección de almacenamiento y de máquina}
+
+RunPod separa el cómputo del almacenamiento:
+
+\begin{description}[leftmargin=*]
+    \item[\textit{Network volume} (almacenamiento persistente).] Se
+    asocia al pod un volumen de red que sobrevive al apagado de la
+    instancia. Sobre él se materializan el repositorio, la caché de
+    \textit{slices} ($\sim 60$~GB), los \textit{checkpoints} y los
+    \textit{logs} de TensorBoard. De esta manera, detener la GPU
+    para no pagar por horas ociosas no implica perder el estado del
+    trabajo ni volver a descargar el dataset; el volumen se factura
+    por GB-mes, una fracción pequeña del coste de GPU
+    (\Cref{sec:pet-costes}).
+    \item[Instancia GPU.] Se selecciona una \textbf{NVIDIA RTX PRO
+    4500 (arquitectura Blackwell, 32~GB de VRAM)}. La elección
+    responde a tres criterios: (i)~\emph{memoria}: 32~GB permiten el
+    \textit{batch} de 32 cortes a $256^2$ con el U-Net de 114~M de
+    parámetros más su copia EMA sin acumulación de gradiente;
+    (ii)~\emph{generación}: los \textit{tensor cores} Blackwell
+    rinden el \texttt{bf16} y el TF32 de los que depende la
+    configuración de la \Cref{subsec:pet-config}; y
+    (iii)~\emph{precio}: las alternativas de consumo con menos VRAM
+    (RTX 4090, 24~GB) habrían obligado a acumulación de gradiente, y
+    las tarjetas de centro de datos (A100/H100) multiplican la
+    tarifa horaria sin que un modelo de este tamaño las aproveche.
+    Con esta máquina se recupera la precisión mixta y el
+    \textit{batch} completo, y el entrenamiento queda totalmente
+    desacoplado del ordenador personal.
+\end{description}
+
+\subsubsection{Operativa de ejecución}
+
+El flujo de trabajo sobre el pod descansa en herramientas estándar
+de administración de sistemas Linux remotos:
+
+\begin{description}[leftmargin=*]
+    \item[SSH.] La conexión al pod se realiza por SSH sobre la
+    dirección y puerto que RunPod expone tras lanzar la instancia,
+    autenticada con la clave pública inyectada por el
+    \textit{entrypoint}.
+    \item[\texttt{tmux}.] Cada experimento se lanza dentro de una
+    sesión \texttt{tmux} en el pod. \texttt{tmux} desacopla el ciclo
+    de vida del proceso del de la conexión SSH: cerrar la terminal,
+    perder la red o reiniciar el portátil no interrumpen el
+    entrenamiento, y reconectarse permite recuperar la sesión
+    exactamente en el estado en que se dejó. Combinado con la
+    reanudación desde \textit{checkpoint}
+    (\Cref{subsec:pet-config}), el entrenamiento sobrevive tanto a
+    desconexiones como a reinicios del propio pod.
+    \item[Editor remoto.] La edición y depuración puntual del código
+    se realiza con Cursor (un \textit{fork} de Visual Studio Code) y
+    la extensión \textit{Remote--SSH}: el editor corre en local pero
+    opera sobre el sistema de archivos del pod por el mismo canal
+    SSH, sin sincronizar copias del código.
+\end{description}
+
+El código del proyecto está organizado para que esta operativa sea
+de un solo comando: un \emph{dispatcher} único
+(\texttt{python -m src.main \{preprocess|train|reconstruct|evaluate|preview\}})
+enruta cada subcomando al módulo correspondiente, con un flag
+\texttt{--pipeline} que selecciona entre los dos \textit{pipelines}
+de difusión y las dos líneas base, y un preset \texttt{--smoke}
+(resolución $128^2$, 5 épocas, subconjunto de pacientes) que
+permite verificar el flujo completo de extremo a extremo en
+aproximadamente una hora antes de comprometer un entrenamiento
+largo. La infraestructura compartida (motor de entrenamiento,
+validación, E/S de volúmenes, métricas) vive en módulos comunes, de
+modo que los cuatro experimentos difieren únicamente en la
+construcción de la entrada del modelo y en su procedimiento de
+inferencia.
+
+% ---------------------------------------------------------------------
+\section{Arquitectura y enfoque}
+\label{sec:pet-arquitectura}
+
+\subsection{Red de \textit{denoising}}
+
+La arquitectura del U-Net es idéntica a la empleada en el modelo
+de mariposas (\Cref{sec:mariposas-arquitectura}), modificando
+exclusivamente los canales de entrada y salida:
+
+\begin{itemize}[leftmargin=*]
+    \item \texttt{block\_out\_channels = (128, 128, 256, 256, 512,
+    512)}, lo cual produce un modelo de aproximadamente 114
+    millones de parámetros (idéntico recuento al modelo de
+    mariposas, dado que el primer canal convolucional contribuye
+    una fracción despreciable al total).
+    \item \texttt{layers\_per\_block = 2}.
+    \item Bloque de atención multi-cabeza en el quinto nivel del
+    camino descendente y ascendente (resolución espacial
+    $16 \times 16$ tras cinco \textit{downsamplings} del
+    \textit{input} de $256 \times 256$).
+    \item El \textit{timestep} $t$ se inyecta mediante
+    \textit{embeddings} sinusoidales en cada bloque ResNet.
+\end{itemize}
+
+Los canales de entrada y salida dependen del \textit{pipeline}:
+\texttt{in\_channels = 2} en el supervisado —canal de difusión
+$\mathbf{x}_t$ y canal de condicionamiento $\mathbf{y}$— y
+\texttt{in\_channels = 1} en el no condicional; en ambos casos
+\texttt{out\_channels = 1}.
+
+\subsection{Pipeline~A — supervisado condicional}
+\label{sec:pet-pipeline-a}
+
+El Pipeline~A instancia el condicionamiento supervisado de la
+\Cref{subsec:difusion-condicional} mediante \textbf{concatenación
+por canales}, el mecanismo dominante en la literatura supervisada
+de PET de dosis baja con DDPMs. La entrada del U-Net es el tensor
+de forma $2 \times 256 \times 256$ obtenido concatenando
+$\mathbf{x}_t$ —el \textit{slice} de dosis completa con ruido
+inyectado en el \textit{timestep}~$t$ según la
+\Cref{eq:forward-reparam}— y $\mathbf{y}$ —el \textit{slice}
+pareado de dosis baja, normalizado a la misma escala que
+$\mathbf{x}_0$—. La salida es la predicción $\hat{\mathbf{v}}_t$ de
+tamaño $1 \times 256 \times 256$, entrenada con la
+\Cref{eq:loss-v}.
+
+En inferencia, para cada \textit{slice} axial del volumen se parte
+de $\mathbf{x}_T \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$
+concatenado con el correspondiente $\mathbf{y}$, y se aplica el
+muestreador DDIM (\Cref{eq:ddim-step}) con 50 pasos de
+\textit{denoising} y $\eta = 0$, lo cual hace el proceso
+determinista para una semilla dada.
+
+\subsection{Pipeline~B — prior no condicional con guiado de medición
+(DPS)}
+\label{sec:pet-pipeline-b}
+
+El entrenamiento del Pipeline~B es idéntico al del Pipeline~A
+pero \textbf{sin el canal de condicionamiento}: el U-Net aprende
+$p(\mathbf{x})$ sobre los \textit{slices} de dosis completa
+exclusivamente, y la observación $\mathbf{y}$ no interviene en el
+entrenamiento. En inferencia se introduce la consistencia con la
+medición mediante \textit{Diffusion Posterior Sampling}
+(\Cref{subsec:difusion-condicional}): en cada paso DDIM, la red
+predice $\hat{\mathbf{v}}_t$, se reconstruye la estimación de
+imagen limpia $\hat{\mathbf{x}}_0$ con la \Cref{eq:x0-from-v}, se
+aplica el paso de gradiente de consistencia de la
+\Cref{eq:dps-update} con operador directo identidad ($A =
+\mathbf{I}$), y se ejecuta el paso DDIM estándar sobre el estado ya
+corregido.
+
+La elección del operador identidad y de una varianza de observación
+uniforme es la aproximación más simple y defendible en este
+contexto: el PET de dosis baja carece de una formulación limpia
+$\mathbf{y} = A\mathbf{x}$ —la reducción de dosis combina
+re-muestreo de Poisson, reducción del tiempo de escaneo y la
+posterior etapa de reconstrucción algorítmica del escáner, ninguna
+de las cuales se modela explícitamente—. La pérdida cuadrática en
+el espacio normalizado por $\operatorname{arcsinh}$ equivale a una
+verosimilitud gaussiana isotrópica sobre la representación
+estabilizada de varianza. La sustitución de la varianza uniforme
+por una $\sigma(\mathbf{y})$ derivada de la estadística de Poisson
+es una de las extensiones identificadas como líneas de desarrollo
+futuro (\Cref{sec:lineas-futuras}). La escala de guiado $\omega$ es
+el único hiperparámetro adicional del procedimiento, y se ajusta
+sobre el conjunto de validación.
+
+\subsection{Inferencia volumétrica y exportación}
+\label{subsec:pet-inferencia-volumetrica}
+
+En ambos \textit{pipelines}, la reconstrucción de un volumen lee el
+NIfTI de dosis baja \emph{crudo} y deriva en tiempo de ejecución
+—con la misma función que usa el preprocesamiento— la
+\textit{bounding box}, la escala $M$ y los cortes a procesar, sin
+consultar ninguna estadística precalculada. Esta decisión tiene una
+consecuencia operativa importante: el sistema funciona sobre un
+volumen \emph{no visto} que nunca pasó por el preprocesado, igual
+que ocurriría en un despliegue real. Tras muestrear todos los
+\textit{slices}, éstos se reensamblan en un volumen tridimensional,
+se invierte la normalización de la \Cref{eq:asinh-norm}, se deshace
+el reescalado y el recorte, y el resultado se escribe en formato
+NIfTI con la matriz afín del volumen de entrada.
+
+% ---------------------------------------------------------------------
+\section{Métricas de evaluación}
+\label{sec:pet-metricas}
+
+Sobre el conjunto de test (38 volúmenes) se reportan tres familias
+de métricas.
+
+\paragraph{Métricas de calidad de imagen.}
+PSNR, SSIM y NRMSE se calculan por \textit{slice} y se agregan
+por volumen mediante la media a lo largo de los \textit{slices}.
+Se reportan dos variantes: (i) sobre el \textit{slice} completo
+y (ii) restringidas a la máscara de \textit{foreground} del
+\textit{slice}. La variante restringida es la clínicamente
+relevante porque ignora el fondo vacío; la variante completa es
+la convención estándar y permite la comparación con la literatura.
+
+Estas tres métricas se calculan sobre el \textbf{espacio
+normalizado} de las imágenes (la representación
+$\operatorname{arcsinh}$ en $[-1, +1]$), y no sobre el espacio de
+cuentas. La razón es que el PET tiene un rango dinámico altísimo:
+el PSNR colapsa hacia el vóxel más brillante, por lo que evaluarlo
+en cuentas equivaldría a medir casi exclusivamente cómo de bien se
+reproduce el punto más caliente, siendo numéricamente insensible
+a los errores del resto de la imagen; análogamente, los valores
+atípicos inflarían el SSIM. Además, promediar a lo largo de
+pacientes requiere una escala común para que las comparaciones
+intra-volumen sean justas. La reformulación clave es que
+$\operatorname{arcsinh}$ es monótona e invertible y se aplica por
+igual a la reconstrucción y al \textit{ground truth}: no oculta el
+error, sino que lo repondera para que cuenten los errores
+relativos en todo el rango dinámico en lugar de los errores
+absolutos en el pico. Así, PSNR/SSIM en espacio normalizado son
+una comparación fiel del resultado final, bajo una ponderación de
+intensidad en la que la métrica no está degenerada.
+
+\paragraph{Preservación de intensidad.}
+Como métrica \textit{proxy} de la preservación de SUV —no se
+dispone de metadatos de dosis inyectada ni peso del paciente para
+computar SUV reales—, se reporta el error relativo entre la
+\textbf{media} y el \textbf{máximo} de intensidad de
+\textit{foreground} por volumen, calculado en \textbf{espacio
+de cuentas original} (tras invertir la \Cref{eq:asinh-norm} con la
+$M$ y $k$ derivadas de la dosis baja del propio volumen).
+
+\paragraph{Evaluación cualitativa.}
+Para $N = 5$ volúmenes representativos del conjunto de test se
+generan figuras de cuatro paneles (dosis baja, dosis completa,
+reconstrucción, residuo absoluto) que permiten un análisis visual
+del comportamiento del modelo.
+
+Todas las comparaciones de la \Cref{sec:pet-resultados} se realizan
+sobre exactamente los mismos volúmenes y los mismos
+\textit{slices}, con idéntica normalización per-volumen derivada de
+la dosis baja, lo cual garantiza que las métricas son directamente
+comparables entre métodos.
+
+% ---------------------------------------------------------------------
+\section{Líneas base de referencia}
+\label{sec:pet-baselines}
+
+Comparar los dos \textit{pipelines} de difusión solo entre sí
+dejaría una pregunta esencial sin responder: ¿cuánto de la mejora se
+debe al paradigma de difusión y cuánto se obtendría con métodos más
+simples? Para delimitarlo se evalúan tres referencias, ordenadas de
+menor a mayor capacidad.
+
+\paragraph{Dosis baja sin procesar.}
+La referencia inferior es la propia observación $\mathbf{y}$,
+evaluada directamente contra la dosis completa con las métricas de
+la \Cref{sec:pet-metricas}. Es el suelo que cualquier método debe
+superar, y cuantifica la severidad de la degradación de partida.
+
+\paragraph{Línea base A — U-Net de regresión (ablación del
+paradigma).}
+La \emph{misma} U-Net del \textit{pipeline} supervisado —idénticos
+bloques, canales y número de parámetros— entrenada como regresor
+directo: entrada de un solo canal (el corte de dosis baja), salida
+de un canal (la estimación de dosis completa), objetivo MSE en el
+espacio normalizado $[-1, 1]$, sin proceso de difusión ni
+\textit{scheduler} de ruido. La inferencia es una única pasada hacia
+delante. Mismos datos, misma normalización y mismo presupuesto de
+entrenamiento que el Pipeline~A: la comparación aísla exactamente la
+aportación del \emph{paradigma generativo}, manteniendo constante
+todo lo demás.
+
+\paragraph{Línea base B — RED-CNN (ablación de la arquitectura).}
+RED-CNN~\cite{redcnn2017} es la CNN clásica de referencia para
+\textit{denoising} de TAC y PET de dosis baja: un
+codificador-decodificador residual totalmente convolucional de 5
+capas de convolución y 5 de deconvolución, 96 filtros de
+$5 \times 5$, paso 1 y sin \textit{pooling} —opera a resolución
+completa—, con conexiones residuales simétricas. Son
+$\sim 1{,}8$ millones de parámetros, unas 60 veces menos que la
+U-Net. Se entrena de forma idéntica a la línea base~A (mismos pares,
+mismo objetivo MSE en espacio normalizado, mismo presupuesto), de
+modo que la comparación con ella aísla la \emph{familia
+arquitectónica} en lugar del paradigma. La única adaptación respecto
+al original es la salida lineal (se elimina la ReLU final), ya que
+el espacio normalizado es con signo y el fondo vive en $-1$.
+
+% ---------------------------------------------------------------------
+\section{Comparación de resultados}
+\label{sec:pet-resultados}
+
+La \Cref{tab:pet-comparativa} recoge las métricas de los cuatro
+modelos y de la referencia de dosis baja sobre el conjunto de test
+completo (38 volúmenes, 24.472 \textit{slices}), evaluadas conforme
+a la \Cref{sec:pet-metricas}.
+
+\begin{table}[h!]
+    \centering
+    \small
+    \begin{tabular}{lccccc}
+        \toprule
+        Métrica & Dosis baja & RED-CNN & U-Net reg. &
+        \begin{tabular}{@{}c@{}}Difusión\\supervisada\end{tabular} &
+        \begin{tabular}{@{}c@{}}Difusión\\incond.\ (DPS)\end{tabular} \\
+        \midrule
+        PSNR \textit{fg} (dB) $\uparrow$ & $24{,}56$ & \todo{} & \todo{} & $30{,}20$ & \todo{} \\
+        PSNR \textit{whole} (dB) $\uparrow$ & $28{,}31$ & \todo{} & \todo{} & $35{,}32$ & \todo{} \\
+        SSIM \textit{fg} $\uparrow$ & $0{,}9201$ & \todo{} & \todo{} & $0{,}9652$ & \todo{} \\
+        SSIM \textit{whole} $\uparrow$ & $0{,}7308$ & \todo{} & \todo{} & $0{,}9251$ & \todo{} \\
+        NRMSE \textit{fg} $\downarrow$ & $0{,}0701$ & \todo{} & \todo{} & $0{,}0364$ & \todo{} \\
+        NRMSE \textit{whole} $\downarrow$ & $0{,}0434$ & \todo{} & \todo{} & $0{,}0194$ & \todo{} \\
+        Error medio intensidad (\%) & $+1{,}77$ & \todo{} & \todo{} & $-4{,}75$ & \todo{} \\
+        Error máx.\ intensidad (\%) & $+50{,}10$ & \todo{} & \todo{} & $-18{,}47$ & \todo{} \\
+        \bottomrule
+    \end{tabular}
+    \caption{Comparativa sobre el conjunto de test (38 volúmenes,
+    24.472 \textit{slices}). PSNR/SSIM/NRMSE en espacio normalizado
+    (\textit{fg} = restringido a \textit{foreground};
+    \textit{whole} = \textit{slice} completo); errores de intensidad
+    en espacio de cuentas. La columna de difusión supervisada
+    corresponde al \textit{checkpoint} de la época~100.}
+    \label{tab:pet-comparativa}
+\end{table}
+
+\todo{Completar las columnas de RED-CNN, U-Net de regresión y
+difusión incondicional (DPS) cuando termine la recopilación de
+resultados de los últimos experimentos, e insertar las figuras
+representativas de cuatro paneles.}
+
+Los resultados ya disponibles permiten dos lecturas.
+
+\paragraph{Difusión supervisada frente a la observación.}
+El Pipeline~A mejora a la dosis baja sin procesar en todas las
+métricas estructurales: $+7{,}0$~dB de PSNR sobre el \textit{slice}
+completo ($28{,}31 \to 35{,}32$), $+5{,}6$~dB en \textit{foreground},
+y un salto del SSIM \textit{whole} de $0{,}73$ a $0{,}93$. El NRMSE
+se reduce aproximadamente a la mitad en ambas variantes. En
+preservación de intensidad la lectura es más matizada: la dosis baja
+preserva casi exactamente la \emph{media} de intensidad por
+construcción (error $+1{,}8$\,\%) pero distorsiona gravemente el
+\emph{máximo} ($+50$\,\%, el ruido de Poisson infla los picos),
+mientras que la reconstrucción supervisada estabiliza el máximo
+($-18{,}5$\,\%) a costa de una ligera subestimación sistemática de
+la señal media ($-4{,}75$\,\%), coherente con la saturación suave
+esperable en las regiones más calientes
+(\Cref{sec:pet-preprocesado}).
+
+\paragraph{Progresión del entrenamiento.}
+Entre los \textit{checkpoints} de las épocas 50 y 100 del
+Pipeline~A, las métricas de calidad de imagen mejoran de forma
+consistente (PSNR \textit{whole} $34{,}52 \to 35{,}32$~dB; SSIM
+\textit{whole} $0{,}9207 \to 0{,}9251$; NRMSE \textit{whole}
+$0{,}0213 \to 0{,}0194$), confirmando la observación del
+\Cref{cap:mariposas} de que la calidad sigue creciendo mucho después
+de que la pérdida de entrenamiento se estabilice. El error de
+intensidad media, en cambio, empeora ligeramente
+($-4{,}18 \to -4{,}75$\,\%), lo cual sugiere que el óptimo de las
+métricas estructurales y el de la fidelidad cuantitativa no
+coinciden necesariamente en la misma época.
+
+% ---------------------------------------------------------------------
+\section{Costes}
+\label{sec:pet-costes}
+
+Uno de los objetivos declarados del trabajo
+(\Cref{sec:objetivos}) es documentar el coste real de los
+experimentos, una información que la literatura rara vez hace
+explícita y que condiciona directamente qué se puede y qué no se
+puede explorar en un proyecto con presupuesto acotado.
+
+El modelo de facturación de RunPod tiene dos componentes:
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Cómputo}: la instancia GPU (RTX PRO 4500, 32~GB)
+    se factura por horas de pod activo. Detener el pod detiene el
+    gasto de cómputo, y la combinación de volumen persistente +
+    reanudación desde \textit{checkpoint}
+    (\Cref{sec:pet-entorno-cloud}) permite hacerlo sin perder
+    estado, de modo que solo se paga por horas de GPU realmente
+    útiles.
+    \item \textbf{Almacenamiento}: el \textit{network volume} se
+    factura por GB-mes con independencia de que el pod esté activo.
+    Con $\sim$100~GB (caché de 60~GB más \textit{checkpoints} y
+    \textit{logs}) su coste mensual es una fracción pequeña del
+    coste horario de la GPU.
+\end{itemize}
+
+El alojamiento del dataset preprocesado en Hugging Face Datasets es
+gratuito, y la transferencia de datos de entrada está incluida en la
+tarifa del pod. La \Cref{tab:pet-costes} desglosa el coste de los
+cuatro experimentos de entrenamiento.
+
+\begin{table}[h!]
+    \centering
+    \begin{tabular}{lccc}
+        \toprule
+        Experimento & Horas GPU & Tarifa (USD/h) & Coste (USD) \\
+        \midrule
+        Difusión supervisada (Pipeline A) & \todo{} & \todo{} & \todo{} \\
+        Difusión incondicional (Pipeline B) & \todo{} & \todo{} & \todo{} \\
+        U-Net de regresión (línea base A) & \todo{} & \todo{} & \todo{} \\
+        RED-CNN (línea base B) & \todo{} & \todo{} & \todo{} \\
+        \midrule
+        Evaluaciones e inferencia & \todo{} & \todo{} & \todo{} \\
+        \textit{Network volume} (GB-mes) & \multicolumn{2}{c}{\todo{}} & \todo{} \\
+        \midrule
+        \textbf{Total} & & & \todo{} \\
+        \bottomrule
+    \end{tabular}
+    \caption{Coste de los experimentos sobre RunPod (GPU NVIDIA RTX
+    PRO 4500, 32~GB). Cada fila de entrenamiento corresponde a 100
+    épocas sobre los $\sim 1{,}9 \times 10^{5}$ pares de cortes de
+    entrenamiento.}
+    \label{tab:pet-costes}
+\end{table}
+
+\todo{Rellenar la \Cref{tab:pet-costes} con las horas y tarifas
+reales de RunPod al cierre de los experimentos, y comentar el coste
+total frente a la estimación local inicial (150 h de cómputo
+acoplado al portátil).}
+
+Más allá del entrenamiento, conviene registrar el coste de
+\emph{inferencia}: reconstruir un volumen completo con DDIM-50 en
+local (MacBook Pro M4 Pro, \textit{batch} de inferencia 8) requiere
+aproximadamente una hora por volumen, lo que sitúa la inferencia de
+difusión lejos del tiempo real y motiva la discusión sobre el
+despliegue clínico de la \Cref{sec:limitaciones}. Las líneas base
+discriminativas, con una única pasada hacia delante por corte, son
+órdenes de magnitud más rápidas en inferencia; este contraste forma
+parte de la comparación de paradigmas y se retoma en las
+conclusiones.

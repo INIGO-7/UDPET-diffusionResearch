@@ -1,0 +1,692 @@
+% =====================================================================
+% Capítulo 2 — Marco teórico
+% =====================================================================
+\chapter{Marco teórico: fundamentos de los modelos de difusión}
+\label{cap:marco-teorico}
+
+Este capítulo concentra todo el aparato teórico del trabajo. Primero
+se presenta la idea de los modelos de difusión y sus dos raíces
+históricas; después se desarrolla la formulación matemática completa
+—proceso hacia delante, objetivo de entrenamiento, parametrizaciones
+de la predicción, calendarios de ruido, muestreadores y guiado para
+problemas inversos—; a continuación se repasan brevemente sus
+aplicaciones y los fundamentos físicos del escaneo PET; y se cierra
+con la revisión del estado del arte en reconstrucción de PET con
+difusión. Los capítulos posteriores \emph{referencian} las ecuaciones
+aquí definidas sin volver a derivarlas.
+
+% ---------------------------------------------------------------------
+\section{¿Qué es un modelo de difusión?}
+\label{sec:que-es-difusion}
+
+Un \emph{modelo de difusión} es un modelo generativo probabilístico
+que aprende a producir muestras nuevas de una distribución de datos
+$p(x)$ invirtiendo, paso a paso, un proceso de corrupción gradual.
+La idea central es: si se sabe cómo destruir la estructura de un dato 
+añadiéndole ruido de forma progresiva, hasta
+convertirlo en ruido puro, entonces aprender a \emph{deshacer} este proceso 
+equivale a aprender a \emph{crear} datos a partir de
+ruido. El modelo se entrena, no para describir
+explícitamente la distribución $p(x)$ —algo intratable para datos de
+alta dimensión como las imágenes— sino para revertir un proceso de
+difusión conocido.
+
+Conviene fijar desde el principio dos conceptos elementales que
+reaparecerán a lo largo de toda la sección:
+
+\begin{itemize}
+    \item El \textbf{proceso hacia delante} (\textit{forward} o
+    \textit{diffusion process}): una cadena fija, sin parámetros
+    entrenables, que añade ruido gaussiano a un dato $x_0$ a lo largo
+    de $T$ pasos hasta que $x_T$ es indistinguible de una muestra de
+    $\mathcal{N}(0,\mathbf{I})$.
+    \item El \textbf{proceso hacia atrás} (\textit{reverse} o
+    \textit{denoising process}): la cadena que queremos aprender, en
+    la que una red neuronal con parámetros $\theta$ estima cómo
+    eliminar el ruido en cada paso para reconstruir progresivamente
+    una muestra de datos a partir de ruido puro.
+\end{itemize}
+
+A diferencia de los GAN, donde un generador y un discriminador se
+entrenan de forma adversaria, o de los VAE, que comprimen los datos
+en un espacio latente de baja dimensión, los modelos de difusión
+descomponen la generación en una secuencia larga de pasos de
+\emph{denoising} pequeños y bien condicionados, cada uno de los cuales
+es un problema de aprendizaje supervisado sencillo y estable. 
+
+% ---------------------------------------------------------------------
+\section{Orígenes teóricos}
+\label{sec:por-que-difusion}
+
+\subsection{El origen físico: termodinámica del no equilibrio}
+\label{subsec:origen-fisico}
+
+La motivación original de los modelos de difusión es explícitamente
+física. El trabajo fundacional de Sohl-Dickstein et
+al.~\cite{sohldickstein2015} se inspira en la \emph{termodinámica del
+no equilibrio}: del mismo modo que una gota de tinta en un vaso de
+agua se difunde hasta repartirse de manera homogénea —un estado de
+máxima entropía—, una distribución de datos
+compleja puede transformarse, mediante un proceso de difusión, en una
+distribución gaussiana simple. La apuesta teórica fue que, si dicho
+proceso se aplica con pasos suficientemente pequeños, cada paso de la
+\emph{inversión} admite también una forma funcional sencilla
+(gaussiana), lo que lo hace aprendible por una red neuronal. Es
+decir: se renuncia a modelar directamente la complejísima $p(x)$ y, a
+cambio, se modela una larga secuencia de transiciones locales, cada
+una de ellas tratable.
+
+\subsection{Score-matching: la otra raíz teórica}
+\label{subsec:score-matching}
+
+Existe una segunda línea de trabajo, inicialmente independiente: el
+\emph{score-matching}. En esta formulación, propuesta por Song y
+Ermon~\cite{song2019scorematching}, el objetivo no es modelar la
+densidad $p(x)$ sino su \emph{score}, el gradiente del logaritmo de
+la densidad respecto a los datos, $\nabla_x \log p(x)$. Conocer este
+campo vectorial basta para generar muestras: partiendo de ruido, se
+siguen iterativamente los gradientes hacia regiones de alta densidad
+mediante \emph{dinámica de Langevin}. El problema práctico es que el
+score está mal estimado en las zonas de baja densidad, precisamente
+donde el muestreo arranca; la solución que propusieron —perturbar los
+datos con ruido gaussiano a múltiples escalas y estimar el score de
+cada versión ruidosa— es, en la práctica, casi idéntica al proceso de
+difusión de Sohl-Dickstein. Esta convergencia se formalizó en el
+marco unificado de las ecuaciones diferenciales estocásticas de Song
+et al.~\cite{song2021sde}, donde tanto los DDPM como los modelos de
+score-matching se revelan como dos discretizaciones de la misma SDE
+subyacente.
+
+\subsection{Perspectiva de nuestro estudio}
+\label{subsec:aplica-hoy}
+
+La intuición física de la difusión y el marco de score-matching son
+dos perspectivas teóricas distintas sobre el mismo objeto, y ambas
+describen correctamente lo que hacen los modelos modernos. Sin
+embargo, la arquitectura con la que se entrena e infiere en
+este trabajo es la de la familia \textbf{DDPM}~\cite{ho2020ddpm} y su
+muestreador determinista \textbf{DDIM}~\cite{song2021ddim}: el
+entrenamiento no se plantea como score-matching ni como la inversión
+de una SDE, sino como un objetivo de \emph{predicción del ruido} (o de
+una reparametrización suya, como se verá en la
+\Cref{subsec:parametrizaciones}). No obstante, ese objetivo realiza
+\emph{implícitamente} una estimación del score: la
+\Cref{eq:score-eps} muestra que ambas cantidades coinciden salvo un
+factor de reescalado dependiente de $t$. Esta equivalencia es la que
+permitirá, en la \Cref{subsec:difusion-condicional}, guiar un modelo
+no condicional con una observación externa usando razonamiento
+bayesiano sobre scores.
+
+% ---------------------------------------------------------------------
+\section{Formulación matemática}
+\label{sec:formulacion-difusion}
+
+En el contexto de generación de datos, se parte de una distribución
+$p(x)$ que representa los datos de entrenamiento —por ejemplo, todas
+las imágenes PET de dosis completa—. Esta distribución es demasiado
+compleja para admitir una expresión cerrada, pero generar imágenes
+nuevas equivale a muestrear de ella. Los modelos de difusión
+resuelven el problema construyendo un proceso que transforma
+cualquier distribución en una gaussiana estándar, y aprendiendo a
+invertirlo.
+
+\subsection{Proceso hacia delante}
+\label{subsec:forward}
+
+El proceso hacia delante es una cadena de Markov: cada paso de
+adición de ruido depende exclusivamente del paso anterior. La
+probabilidad conjunta de la trayectoria completa, y su contraparte
+aprendida hacia atrás, se factorizan como
+\begin{align}
+    q(x_{1:T} \mid x_0)
+        &= \prod_{t=1}^{T} q(x_t \mid x_{t-1}),
+        \label{eq:forward-chain}\\
+    p_\theta(x_{0:T})
+        &= p_\theta(x_T) \prod_{t=1}^{T} p_\theta(x_{t-1} \mid x_t).
+        \label{eq:reverse-chain}
+\end{align}
+
+Cada transición hacia delante añade una cantidad controlada de ruido
+gaussiano:
+\begin{equation}
+    q(\mathbf{x}_t \mid \mathbf{x}_{t-1})
+    = \mathcal{N}\!\left(\mathbf{x}_t;\, \sqrt{1 - \beta_t}\,
+      \mathbf{x}_{t-1},\, \beta_t \mathbf{I}\right),
+    \label{eq:forward-step}
+\end{equation}
+donde $\{\beta_t\}_{t=1}^{T}$ es un calendario de varianza
+predefinido (\Cref{subsec:schedules}). Definiendo
+$\alpha_t = 1 - \beta_t$ y $\bar{\alpha}_t = \prod_{s=1}^{t}
+\alpha_s$, la composición de transiciones gaussianas admite una forma
+cerrada que permite muestrear $\mathbf{x}_t$ directamente desde
+$\mathbf{x}_0$ en un único paso:
+\begin{equation}
+    q(\mathbf{x}_t \mid \mathbf{x}_0)
+    = \mathcal{N}\!\left(\mathbf{x}_t;\, \sqrt{\bar{\alpha}_t}\,
+      \mathbf{x}_0,\, (1 - \bar{\alpha}_t)\mathbf{I}\right),
+    \label{eq:forward-closed}
+\end{equation}
+o, por reparametrización,
+\begin{equation}
+    \mathbf{x}_t
+    = \sqrt{\bar{\alpha}_t}\,\mathbf{x}_0
+    + \sqrt{1 - \bar{\alpha}_t}\,\boldsymbol{\varepsilon},
+    \qquad
+    \boldsymbol{\varepsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I}).
+    \label{eq:forward-reparam}
+\end{equation}
+Esta forma cerrada es la que hace eficiente el entrenamiento: en cada
+iteración se puede construir una muestra ruidosa de cualquier nivel
+$t$ sin simular la cadena completa.
+
+\subsection{Proceso inverso y objetivo de entrenamiento}
+\label{subsec:objetivo}
+
+El proceso inverso se modela con transiciones gaussianas cuya media
+estima una red neuronal:
+\begin{equation}
+    p_\theta(\mathbf{x}_{t-1} \mid \mathbf{x}_t)
+    = \mathcal{N}\!\left(\mathbf{x}_{t-1};\,
+      \boldsymbol{\mu}_\theta(\mathbf{x}_t, t),\,
+      \sigma_t^2 \mathbf{I}\right).
+    \label{eq:reverse-step}
+\end{equation}
+El entrenamiento maximiza la verosimilitud de los datos a través de
+una cota variacional (ELBO). Ho et al.~\cite{ho2020ddpm} demostraron que, 
+tras simplificar los pesos de los términos de la cota, el objetivo se 
+reduce a un problema de regresión notablemente simple: predecir el ruido
+$\boldsymbol{\varepsilon}$ que se añadió en la
+\Cref{eq:forward-reparam},
+\begin{equation}
+    \mathcal{L}_{\text{simple}}
+    = \mathbb{E}_{t \sim \mathcal{U}[1,T],\, \mathbf{x}_0,\,
+                   \boldsymbol{\varepsilon}}
+      \!\left[\left\|\boldsymbol{\varepsilon}
+        - \boldsymbol{\varepsilon}_\theta\!\left(\mathbf{x}_t, t\right)
+        \right\|^2\right].
+    \label{eq:loss-eps}
+\end{equation}
+En cada iteración se muestrea un dato $\mathbf{x}_0$, un paso $t$
+uniforme y un ruido $\boldsymbol{\varepsilon}$; se construye
+$\mathbf{x}_t$ con la \Cref{eq:forward-reparam}; se predice el ruido como
+veremos posteriormente en la \Cref{subsec:parametrizaciones}; y se actualizan los
+parámetros con el gradiente del error cuadrático medio sobre el ruido. Cada paso es
+un problema supervisado estable, sin dinámica adversaria.
+
+\subsection{Parametrizaciones de la predicción}
+\label{subsec:parametrizaciones}
+
+La \Cref{eq:forward-reparam} liga linealmente tres cantidades
+—$\mathbf{x}_t$, $\mathbf{x}_0$ y $\boldsymbol{\varepsilon}$—, de
+modo que conocidas dos de ellas la tercera queda determinada. Esto da
+libertad para elegir \emph{qué} predice la red, y la elección tiene
+consecuencias prácticas:
+
+\paragraph{Predicción de ruido ($\epsilon$-prediction).}
+Es la formulación original de la \Cref{eq:loss-eps}. Conocido el
+ruido estimado $\hat{\boldsymbol{\varepsilon}}$, la imagen limpia se
+recupera invirtiendo la \Cref{eq:forward-reparam}:
+\begin{equation}
+    \hat{\mathbf{x}}_0
+    = \frac{\mathbf{x}_t
+        - \sqrt{1-\bar{\alpha}_t}\;\hat{\boldsymbol{\varepsilon}}}
+      {\sqrt{\bar{\alpha}_t}}.
+    \label{eq:x0-from-eps}
+\end{equation}
+Su punto débil está en los \textit{timesteps} extremos: cuando
+$t \to T$, $\sqrt{\bar{\alpha}_t} \to 0$ y la
+\Cref{eq:x0-from-eps} amplifica enormemente cualquier error de la
+red.
+
+\paragraph{Predicción de la imagen ($\mathbf{x}_0$-prediction).}
+La red estima directamente $\mathbf{x}_0$. Tiene el problema
+simétrico: en los \textit{timesteps} de poco ruido ($t \to 0$) la
+tarea es casi trivial y la señal de aprendizaje sobre el ruido
+residual se desvanece.
+
+\paragraph{Predicción de velocidad (\textit{v-prediction}).}
+Salimans y Ho~\cite{salimans2022vprediction} proponen el objetivo
+intermedio
+\begin{equation}
+    \mathbf{v}_t
+    = \sqrt{\bar{\alpha}_t}\,\boldsymbol{\varepsilon}
+    - \sqrt{1-\bar{\alpha}_t}\,\mathbf{x}_0,
+    \label{eq:v-def}
+\end{equation}
+una combinación que rota suavemente entre predecir el ruido (en
+$t \to 0$) y predecir la imagen con signo cambiado (en $t \to T$).
+La pérdida correspondiente es
+\begin{equation}
+    \mathcal{L}_{\mathbf{v}}
+    = \mathbb{E}_{t,\, \mathbf{x}_0,\, \boldsymbol{\varepsilon}}
+      \!\left[\left\|\mathbf{v}_t
+        - \mathbf{v}_\theta(\mathbf{x}_t,\, t)
+      \right\|^2\right],
+    \label{eq:loss-v}
+\end{equation}
+y la estimación de la imagen limpia a partir de la predicción
+$\hat{\mathbf{v}}_t$ es
+\begin{equation}
+    \hat{\mathbf{x}}_0
+    = \sqrt{\bar{\alpha}_t}\,\mathbf{x}_t
+    - \sqrt{1-\bar{\alpha}_t}\,\hat{\mathbf{v}}_t.
+    \label{eq:x0-from-v}
+\end{equation}
+La parametrización $\mathbf{v}$ es numéricamente estable en los dos
+límites $t \to 0$ y $t \to T$, lo que evita las inestabilidades de
+entrenamiento de las dos anteriores en los \textit{timesteps} de muy
+bajo o muy alto ruido. Es la parametrización empleada en los
+\textit{pipelines} de reconstrucción PET de este trabajo
+(\Cref{sec:pet-entrenamiento}); el experimento de mariposas
+(\Cref{cap:mariposas}) emplea la $\epsilon$-prediction original, lo
+que permite comparar ambas en la práctica.
+
+\subsection{Conexión con el score}
+\label{subsec:score-conexion}
+
+Aunque los DDPM no se derivan del score-matching, sí lo realizan
+implícitamente. Para la distribución marginal ruidosa
+$q(\mathbf{x}_t)$ inducida por la \Cref{eq:forward-closed} se cumple
+\begin{equation}
+    \nabla_{\mathbf{x}_t} \log q(\mathbf{x}_t)
+    = -\frac{\boldsymbol{\varepsilon}_\theta(\mathbf{x}_t, t)}
+            {\sqrt{1-\bar{\alpha}_t}},
+    \label{eq:score-eps}
+\end{equation}
+es decir, la red que predice el ruido es —salvo un factor de
+reescalado dependiente de $t$— un estimador del score de la
+distribución ruidosa. Las parametrizaciones de la
+\Cref{subsec:parametrizaciones} son interconvertibles, así que la
+identidad vale para cualquiera de ellas. Esta equivalencia es la
+puerta de entrada del razonamiento bayesiano sobre el muestreo que
+fundamenta el guiado posterior
+(\Cref{subsec:difusion-condicional}).
+
+\subsection{Calendarios de ruido}
+\label{subsec:schedules}
+
+El calendario $\{\beta_t\}$ determina cuánta señal sobrevive en cada
+\textit{timestep} —la relación señal-ruido es
+$\mathrm{SNR}(t) = \bar{\alpha}_t / (1-\bar{\alpha}_t)$— y, con ello,
+sobre qué niveles de ruido se concentra el esfuerzo de aprendizaje.
+El calendario \textbf{lineal} original de Ho et al.~\cite{ho2020ddpm}
+interpola $\beta_t$ entre $10^{-4}$ y $0{,}02$; destruye la señal
+demasiado deprisa, de modo que muchos \textit{timesteps} finales
+resultan casi inútiles para el aprendizaje. Nichol y
+Dhariwal~\cite{nichol2021cosine} proponen el calendario
+\textbf{cosenoidal}, definido sobre la señal acumulada:
+\begin{equation}
+    \bar{\alpha}_t = \frac{f(t)}{f(0)},
+    \qquad
+    f(t) = \cos^2\!\left(
+        \frac{t/T + s}{1 + s}\cdot\frac{\pi}{2}
+    \right),
+    \label{eq:cosine-schedule}
+\end{equation}
+con un pequeño \textit{offset} $s$ que evita degeneración en $t=0$.
+Este perfil degrada la señal de forma más gradual y produce una
+distribución de SNR mejor adaptada a resoluciones medias; es el
+calendario empleado en los \textit{pipelines} PET de este trabajo.
+
+\subsection{Muestreo: DDPM y DDIM}
+\label{subsec:muestreo}
+
+\paragraph{Muestreo ancestral (DDPM).}
+Para generar, se parte de ruido puro
+$\mathbf{x}_T \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$ y se aplica
+$T$ veces la transición inversa aprendida. En la parametrización
+$\epsilon$, cada paso recupera
+\begin{equation}
+    \mathbf{x}_{t-1}
+    = \frac{1}{\sqrt{\alpha_t}}
+      \!\left(\mathbf{x}_t
+        - \frac{\beta_t}{\sqrt{1 - \bar{\alpha}_t}}\,
+        \boldsymbol{\varepsilon}_\theta(\mathbf{x}_t, t)\right)
+    + \sigma_t\,\mathbf{z},
+    \qquad
+    \mathbf{z} \sim \mathcal{N}(\mathbf{0}, \mathbf{I}).
+    \label{eq:ddpm-step}
+\end{equation}
+El procedimiento es estocástico y requiere los $T$ pasos completos
+(típicamente $T=1000$), lo que lo hace lento en inferencia.
+
+\paragraph{Muestreo determinista acelerado (DDIM).}
+Song et al.~\cite{song2021ddim} observan que existe una familia de
+procesos no markovianos con las mismas marginales que la
+\Cref{eq:forward-closed}, lo que permite saltar entre
+\textit{timesteps} no consecutivos. Cada paso DDIM se escribe en
+función de la estimación de la imagen limpia $\hat{\mathbf{x}}_0$
+(obtenida con la \Cref{eq:x0-from-eps} o la \Cref{eq:x0-from-v},
+según la parametrización):
+\begin{equation}
+    \mathbf{x}_{t-1}
+    = \sqrt{\bar{\alpha}_{t-1}}\,\hat{\mathbf{x}}_0
+    + \sqrt{1-\bar{\alpha}_{t-1}-\tilde{\sigma}_t^2}\,
+      \hat{\boldsymbol{\varepsilon}}
+    + \tilde{\sigma}_t\,\mathbf{z},
+    \label{eq:ddim-step}
+\end{equation}
+donde el parámetro $\eta$ escala $\tilde{\sigma}_t$ entre el caso
+DDPM ($\eta=1$) y el caso totalmente \textbf{determinista}
+($\eta=0$), en el que la trayectoria queda fijada por la semilla
+inicial. En la práctica, DDIM con $\eta=0$ y 50 pasos produce
+muestras de calidad comparable a los 1000 pasos ancestrales con una
+veinteava parte del coste; es el muestreador empleado en la
+inferencia de los \textit{pipelines} PET.
+
+\subsection{Difusión condicional y problemas inversos}
+\label{subsec:difusion-condicional}
+
+Hasta aquí el modelo genera muestras incondicionales de $p(x)$. En
+un problema de reconstrucción interesa la distribución
+\emph{posterior} $p(\mathbf{x} \mid \mathbf{y})$: qué imágenes
+limpias son compatibles con una observación degradada $\mathbf{y}$.
+Existen dos estrategias.
+
+\paragraph{Condicionamiento supervisado.}
+Si se dispone de pares $(\mathbf{x}, \mathbf{y})$, la vía directa es
+entrenar la red de \textit{denoising} con la observación como entrada
+adicional, $\mathbf{v}_\theta(\mathbf{x}_t, \mathbf{y}, t)$
+—típicamente concatenando $\mathbf{y}$ como canal extra—. El
+objetivo de entrenamiento es el mismo de la \Cref{eq:loss-v}, y el
+muestreo (\Cref{eq:ddim-step}) hereda el condicionamiento sin
+cambios. El modelo aprende directamente
+$p(\mathbf{x} \mid \mathbf{y})$ y aprovecha íntegramente los datos
+pareados, a costa de quedar ligado a la degradación concreta vista en
+entrenamiento.
+
+\paragraph{Guiado posterior (DPS).}
+La alternativa es entrenar un prior \emph{no condicional}
+$p(\mathbf{x})$ e inyectar la observación solo en inferencia. El
+punto de partida es la regla de Bayes aplicada al score de la
+distribución ruidosa:
+\begin{equation}
+    \nabla_{\mathbf{x}_t} \log p(\mathbf{x}_t \mid \mathbf{y})
+    = \nabla_{\mathbf{x}_t} \log p(\mathbf{x}_t)
+    + \nabla_{\mathbf{x}_t} \log p(\mathbf{y} \mid \mathbf{x}_t).
+    \label{eq:posterior-score}
+\end{equation}
+El primer término lo proporciona el modelo entrenado
+(\Cref{eq:score-eps}); el segundo es intratable porque relaciona la
+observación con el estado \emph{ruidoso} $\mathbf{x}_t$.
+\textit{Diffusion Posterior Sampling} (DPS)~\cite{chung2023dps}
+propone la aproximación
+$p(\mathbf{y} \mid \mathbf{x}_t) \approx
+p(\mathbf{y} \mid \hat{\mathbf{x}}_0(\mathbf{x}_t))$, usando la
+estimación de imagen limpia que el propio modelo produce en cada paso
+(\Cref{eq:x0-from-v}). Para un modelo de observación gaussiano
+$\mathbf{y} = A\mathbf{x} + \mathbf{n}$, el término de verosimilitud
+se convierte en un paso de gradiente sobre el error de medición, que
+se intercala en cada iteración del muestreo:
+\begin{equation}
+    \mathbf{x}_t \leftarrow
+        \mathbf{x}_t - \omega \cdot
+        \nabla_{\mathbf{x}_t}
+        \!\left[\frac{1}{2}
+            \left\|A\,\hat{\mathbf{x}}_0(\mathbf{x}_t)
+              - \mathbf{y}\right\|_2^2
+        \right],
+    \label{eq:dps-update}
+\end{equation}
+donde $\omega$ es la escala de guiado, único hiperparámetro del
+procedimiento: valores bajos confían en el prior y valores altos
+fuerzan la consistencia con la medición. El gradiente atraviesa la
+red ($\hat{\mathbf{x}}_0$ depende de $\theta$), por lo que cada paso
+de inferencia requiere una pasada hacia atrás además de la pasada
+hacia delante. La gran ventaja del enfoque es que el mismo prior
+sirve para cualquier operador $A$ sin reentrenar; su debilidad, que
+la calidad depende de lo bien que el modelo de observación describa
+la degradación real.
+
+% ---------------------------------------------------------------------
+\section{Principales aplicaciones}
+\label{sec:aplicaciones-difusion}
+
+El interés teórico se vio rápidamente respaldado por resultados
+empíricos que situaron a la difusión por delante de los GAN en
+síntesis de imágenes~\cite{dhariwal2021beatgans}. Desde entonces, el
+abanico de aplicaciones se ha ampliado de forma notable. A modo de
+panorámica:
+
+\begin{itemize}
+    \item \textbf{Síntesis de imágenes incondicional y condicional},
+    incluyendo la generación texto-a-imagen a gran escala, viable
+    gracias a los modelos de difusión latente que operan en un espacio
+    comprimido en lugar de en el espacio de píxeles~\cite{rombach2022ldm}.
+    \item \textbf{Problemas inversos en imagen}: super-resolución,
+    \textit{inpainting}, \textit{deblurring} y \emph{denoising}, donde
+    se busca recuperar una señal limpia a partir de una observación
+    degradada.
+    \item \textbf{Imagen médica}, que es el contexto de este trabajo:
+    reconstrucción, reducción de ruido y síntesis de modalidades, con
+    aplicaciones específicas a PET~\cite{scorepet2024,ddpmpet2023} que
+    motivan directamente la contribución de esta memoria.
+    \item \textbf{Otros dominios}: generación de audio y voz, de vídeo,
+    de estructuras moleculares y de datos científicos, donde la misma
+    receta de \emph{corromper y aprender a revertir} se traslada con
+    pocas modificaciones.
+\end{itemize}
+
+La aplicación que vertebra este trabajo —la reconstrucción de PET de
+baja dosis— se sitúa en la intersección entre los problemas inversos
+en imagen y la imagen médica, y se desarrolla en el
+\Cref{cap:pet}.
+
+% ---------------------------------------------------------------------
+\section{La tomografía por emisión de positrones}
+\label{sec:pet-fisica}
+
+Antes de revisar el estado del arte conviene fijar, brevemente, cómo
+se forma una imagen PET y de dónde procede el ruido que este trabajo
+intenta eliminar.
+
+\subsection{Principio de funcionamiento}
+\label{subsec:pet-funcionamiento}
+
+Al paciente se le inyecta un \emph{radiotrazador}: una molécula
+biológicamente activa —típicamente fluorodesoxiglucosa, un análogo de
+la glucosa— marcada con un isótopo emisor de positrones de vida
+corta, como el flúor-18. El trazador se distribuye por el torrente
+sanguíneo y se acumula en los tejidos con mayor actividad metabólica:
+el cerebro, el corazón, una lesión tumoral. Cada desintegración del
+isótopo emite un \emph{positrón}, la antipartícula del electrón, que
+recorre del orden de un milímetro de tejido antes de aniquilarse con
+un electrón; la aniquilación produce dos fotones gamma de 511~keV
+que salen en direcciones casi opuestas. Un anillo de detectores
+alrededor del paciente registra los pares de fotones que llegan en
+coincidencia temporal; cada coincidencia define una \emph{línea de
+respuesta} sobre la que tuvo lugar la aniquilación. A partir de
+millones de estas líneas, un algoritmo de reconstrucción tomográfica
+—clásicamente retroproyección filtrada o métodos iterativos de
+máxima verosimilitud tipo EM— estima la distribución espacial del
+trazador. El resultado es un mapa funcional del metabolismo, no una
+imagen anatómica: esa es la diferencia esencial del PET frente a los
+rayos X o la TAC.
+
+\subsection{Dosis, tiempo de adquisición y ruido}
+\label{sec:pet-ruido}
+
+La imagen PET es, en esencia, un recuento de eventos discretos, y por
+ello su ruido es de naturaleza \textbf{Poisson}: la varianza del
+recuento en cada elemento de medida es proporcional a su media, de
+modo que la relación señal-ruido crece con la raíz del número de
+eventos detectados. El número total de eventos es proporcional a la
+dosis inyectada y al tiempo de adquisición. Reducir la dosis a un
+veinteavo —el escenario de este trabajo— equivale a recortar el
+recuento en ese mismo factor, con una degradación severa: en el
+conjunto de datos empleado, la desviación típica del residuo entre la
+versión de dosis baja y la de dosis completa, restringida al
+tejido, es del orden del 31\,\% de la media de señal
+(\Cref{sec:pet-datos}).
+
+Un malentendido frecuente es que el modelo de ruido de Poisson del
+PET sería incompatible con el ruido gaussiano artificial del proceso
+de difusión. No es un problema: el proceso de difusión no pretende
+imitar el ruido físico del instrumento, sino establecer una
+correspondencia entre la distribución de imágenes de interés y una
+distribución de referencia conocida, que se elige gaussiana por sus
+propiedades matemáticas (\Cref{subsec:forward}). El ruido físico de
+la observación entra en escena por otra vía: en el paradigma
+supervisado, a través de los pares de entrenamiento que muestran al
+modelo cómo es la degradación real; en el paradigma de guiado, a
+través del término de verosimilitud de la \Cref{eq:dps-update}.
+
+\subsection{La reconstrucción de dosis baja como problema inverso}
+\label{subsec:pet-problema-inverso}
+
+Formalmente, se dispone de una observación $\mathbf{y}$ (el escaneo
+de dosis baja) y se busca la señal $\mathbf{x}$ (el escaneo de dosis
+completa equivalente). La operación que liga ambas no es trivialmente
+invertible: combina el re-muestreo Poisson del recuento, la reducción
+del tiempo efectivo de adquisición y la etapa de reconstrucción
+algorítmica del propio escáner, y destruye información. El problema
+es por tanto \emph{mal planteado}, y toda solución se apoya —explícita
+o implícitamente— en un prior sobre qué imágenes son plausibles. Los
+dos paradigmas de la \Cref{subsec:difusion-condicional} son
+exactamente las dos maneras de instanciar ese prior con un modelo de
+difusión, y su comparación empírica sobre PET real es el objeto del
+\Cref{cap:pet}.
+
+% ---------------------------------------------------------------------
+\section{Estado del arte en reconstrucción de PET con modelos de
+difusión}
+\label{sec:estado-del-arte}
+
+Establecido el aparato conceptual y formal, esta sección recorre las
+contribuciones más relevantes aplicadas al problema de la
+reconstrucción de PET de dosis baja. La presentación es
+\emph{cronológica}, de las propuestas más antiguas a las más
+recientes, con la intención de mostrar cómo ha evolucionado el campo
+y qué aporta cada trabajo respecto a los anteriores.
+
+\paragraph{Octubre 2023 — DDPM como modelo de prior para
+\textit{denoising} de PET~\cite{ddpmpet2023}.} La primera de las
+contribuciones que se reseñan plantea, de manera todavía
+exploratoria, la pregunta que vertebrará buena parte del campo
+durante los años siguientes: ¿pueden los \emph{Denoising Diffusion
+Probabilistic Models}, recién popularizados por el trabajo de Ho
+et al.~\cite{ho2020ddpm}, utilizarse como modelo de aprendizaje
+de la distribución de imágenes PET de buena calidad y, a partir
+de ahí, reducir el ruido de escaneos degradados? El estudio
+entrena un DDPM como modelo de distribución sobre escaneos PET y
+compara varias estrategias derivadas para la tarea de
+\textit{denoising}. El interés de este trabajo no es tanto el de
+una propuesta cerrada cuanto el de una \emph{prueba de concepto}
+que abre la puerta a las líneas posteriores: introduce los
+ingredientes —un DDPM como prior aprendido, una forma de
+condicionar o guiar el muestreo hacia consistencia con la
+observación— sobre los que se construirán las propuestas
+sofisticadas que siguen.
+
+\paragraph{Enero 2024 — Score-based generative models aplicados a
+PET~\cite{scorepet2024}.} Esta contribución traslada al dominio
+del PET el marco de los \emph{score-based generative models},
+formalizado por Song et al.~\cite{song2021sde} como una
+unificación de los DDPM con la dinámica de Langevin sobre el
+score. La reformulación tiene dos consecuencias prácticas
+relevantes. La primera es \emph{teórica}: al expresar el proceso
+de difusión como una ecuación diferencial estocástica continua,
+se dispone de toda la maquinaria del cálculo estocástico —incluida
+la ecuación inversa de Anderson— para razonar sobre cómo inyectar
+la consistencia con la medición en el muestreo. La segunda es
+\emph{operativa}: la flexibilidad para elegir muestreadores y para
+incorporar términos de guiado permite atacar directamente el
+problema inverso de la reconstrucción sin recurrir a un
+entrenamiento condicional supervisado. Es, por tanto, el primer
+trabajo que sitúa el guiado posterior como una alternativa
+defendible al condicionamiento supervisado en PET.
+
+\paragraph{Junio 2024 — DDPEM: integración del proceso EM con
+DDPM~\cite{ddpem2024}.} Esta propuesta, denominada DDPEM, plantea
+una hibridación interesante entre el proceso clásico de
+reconstrucción \emph{Expectation Maximization} —el algoritmo de
+referencia para la reconstrucción analítica de PET— y el muestreo
+inverso de un DDPM. La motivación es físicamente coherente: la
+operación de adquisición del PET admite una formulación
+probabilística para la que EM proporciona un algoritmo de máxima
+verosimilitud bien fundamentado, y combinarla con un prior
+generativo aprendido por un DDPM permite incorporar conocimiento
+sobre la estructura de las imágenes plausibles que el algoritmo
+EM, por sí solo, no posee. El resultado es un esquema que
+explícitamente reconoce el modelo físico del PET en lugar de
+tratar la observación como una imagen genérica degradada. Esta
+línea representa el extremo más \emph{model-based} del espectro
+de soluciones basadas en difusión.
+
+\paragraph{Junio 2024 — Revisión BJR\,AI: la difusión no supervisada
+como estado del arte~\cite{bjrai2024}.} Apenas unas semanas
+después, la revista \emph{British Journal of Radiology, Artificial
+Intelligence} publica una revisión exhaustiva sobre el uso de
+algoritmos de reconstrucción basados en modelos generativos
+profundos para imagen médica que tiene un valor particular por dos
+motivos. En primer lugar, \emph{establece} —tras una comparación
+sistemática de la literatura disponible— que los algoritmos que
+incorporan modelos de difusión \emph{no supervisados} constituyen
+el estado del arte en tres tareas clave de imagen médica: la
+resonancia magnética ultrarrápida, la TAC \textit{super-sparse-view}
+y, de forma directamente relevante para este trabajo, el PET de
+dosis baja. En segundo lugar, ofrece una introducción didáctica
+muy cuidada tanto al planteamiento general de los problemas
+inversos en imagen como a la maquinaria de los modelos de difusión,
+acompañada de una discusión metodológica sobre los retos
+específicos de cada modalidad (formulación del operador directo,
+ruido característico, métricas adecuadas) y de un catálogo de los
+campos de investigación abiertos. Más que una propuesta
+metodológica, este trabajo funciona como \emph{punto de anclaje}
+del estado del arte y como justificación para apostar por la línea
+del prior no condicional con guiado de medición, que es uno de los
+dos \textit{pipelines} desarrollados en esta memoria.
+
+\paragraph{Junio 2025 — MAMBA para reconstrucción con
+incertidumbre~\cite{mamba2025}.} Una vez asentada la difusión como
+referencia para el dominio, la innovación se desplaza hacia la
+\emph{arquitectura} de la red de \textit{denoising}. Este trabajo
+sustituye la arquitectura tradicional de tipo U-Net o
+\textit{transformer} por un modelo basado en el paradigma
+\texttt{MAMBA}, una familia de modelos de espacio de estados que
+combina eficiencia computacional —complejidad lineal en la
+secuencia— con la capacidad de modelar dependencias de largo
+alcance, particularmente atractiva para datos volumétricos en los
+que la atención completa resulta prohibitiva. Además de proponer
+una mejora arquitectónica, el trabajo incorpora una modelización
+explícita de la \emph{incertidumbre} de la reconstrucción, un
+ingrediente clínicamente relevante que tiende a estar ausente en
+las propuestas anteriores. El estudio reclama el estado del arte
+para PET de dosis baja, así como para resonancia magnética rápida
+y TAC \textit{sparse-view}.
+
+\paragraph{Diciembre 2025 — Task-Adaptive Transformer
+(TAT)~\cite{tat2025}.} La contribución más reciente que se reseña
+da otro giro arquitectónico: propone un \emph{Task-Adaptive
+Transformer}, un único modelo que comparte representación entre
+tareas de restauración heterogéneas y se especializa
+dinámicamente en función de la tarea —síntesis de PET, reducción
+de ruido en TAC, super-resolución en resonancia magnética—. La
+filosofía es la de los \emph{modelos generalistas} de imagen
+médica, un movimiento paralelo al de los grandes modelos
+fundacionales en otros dominios. El estudio reclama el estado del
+arte en las tres tareas que aborda. Para los propósitos de este
+trabajo, su interés es relativo: aporta un techo competitivo de
+referencia, pero queda fuera del alcance —y del presupuesto de
+cómputo— de un TFM tratar de reproducir o superar un modelo
+generalista de este tipo.
+
+\paragraph{Lectura conjunta.} Vistas las contribuciones en orden
+cronológico, el campo dibuja una trayectoria nítida: arranca en
+2023 con DDPM básicos aplicados a PET~\cite{ddpmpet2023}, se
+formaliza en 2024 mediante el marco de los \emph{score-based
+generative models}~\cite{scorepet2024} y la hibridación con el
+modelo físico del PET~\cite{ddpem2024}, se consolida ese mismo año
+con una revisión que lo sitúa explícitamente como estado del
+arte~\cite{bjrai2024}, y en 2025 se diversifica en dos direcciones
+arquitectónicas —modelos de espacio de estados con cuantificación
+de incertidumbre~\cite{mamba2025} y \textit{transformers}
+generalistas multitarea~\cite{tat2025}— que comparten el sustrato
+de difusión pero exploran maneras distintas de aprovecharlo. Esta
+trayectoria justifica el diseño que se desarrolla en el
+\Cref{cap:pet}: la elección de comparar un \textit{pipeline}
+supervisado condicional —la formulación canónica más directa— con
+un \textit{pipeline} de prior no condicional con guiado por
+medición —la línea identificada como estado del arte por la
+revisión BJR\,AI— es exactamente la decisión que el panorama
+descrito sugiere.

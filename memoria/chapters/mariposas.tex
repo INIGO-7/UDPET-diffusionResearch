@@ -1,0 +1,222 @@
+% =====================================================================
+% Capítulo 3 — Experimento preliminar: mariposas
+% =====================================================================
+\chapter{Generando mariposas: modelos de difusión en acción}
+\label{cap:mariposas}
+
+Como primer experimento práctico, se entrena un modelo DDPM
+(\textit{Denoising Diffusion Probabilistic Model}) sobre un
+conjunto de imágenes de mariposas, con el objetivo de generar
+muestras sintéticas nuevas. Este ejercicio sirve como banco de
+pruebas para comprender el proceso de entrenamiento e inferencia
+antes de abordar el problema de reconstrucción de imágenes PET.
+
+\section{Datos y preprocesamiento}
+\label{sec:mariposas-datos}
+
+Se utiliza el subconjunto \texttt{huggan/smithsonian\_butterflies\_subset}
+del Instituto Smithsoniano. Cada imagen se redimensiona a
+$256 \times 256$ píxeles preservando su relación de aspecto: el
+lado más largo se reescala al tamaño objetivo, y el lado más corto
+se rellena con relleno blanco simétrico hasta alcanzar una imagen
+cuadrada (operación \texttt{ResizeToFit} + \texttt{PadToSquare} en
+el código fuente). Sobre el resultado se aplica volteo horizontal
+aleatorio como aumento de datos, y se normaliza al rango $[-1, 1]$
+mediante la transformación
+\begin{equation}
+    x' = \frac{x - 0.5}{0.5}.
+\end{equation}
+El conjunto se carga en lotes de orden aleatorio en cada época.
+
+Una iteración previa de este experimento siguió literalmente el
+\textit{tutorial} oficial de la librería \texttt{diffusers}, con
+imágenes reescaladas directamente a $128 \times 128$ píxeles. Ese
+reescalado directo (sin preservar relación de aspecto ni rellenar
+para mantener la geometría original) introduce una deformación
+sistemática del contenido, visible en las muestras generadas
+(\Cref{fig:mariposas-128}). El paso a $256 \times 256$ con
+\texttt{ResizeToFit} + \texttt{PadToSquare} corrige esta patología
+y es el preprocesamiento empleado en el resto del capítulo.
+
+\section{Paradigma de difusión empleado}
+\label{sec:mariposas-paradigma}
+
+El experimento sigue la formulación DDPM original en su versión más
+sencilla, que es exactamente la desarrollada en el
+\Cref{cap:marco-teorico}:
+
+\begin{itemize}
+    \item \textbf{Proceso hacia delante}: corrupción gaussiana en
+    $T = 1000$ pasos discretos con calendario de varianza
+    \emph{lineal}, muestreando $\mathbf{x}_t$ directamente desde
+    $\mathbf{x}_0$ mediante la forma cerrada de las
+    \Cref{eq:forward-closed,eq:forward-reparam}.
+    \item \textbf{Objetivo de entrenamiento}: predicción del ruido
+    ($\epsilon$-prediction) con la pérdida MSE simplificada de la
+    \Cref{eq:loss-eps}. En cada iteración se muestrea $t$
+    uniformemente en $\{1, \ldots, 1000\}$ y el gradiente se propaga
+    únicamente a través de la predicción del modelo.
+    \item \textbf{Inferencia}: muestreo ancestral DDPM completo de
+    $T = 1000$ pasos según la \Cref{eq:ddpm-step}, partiendo de
+    ruido puro $\mathbf{x}_T \sim \mathcal{N}(\mathbf{0},
+    \mathbf{I})$. La implementación permite fijar la semilla para
+    reproducibilidad o variarla para explorar el espacio generativo.
+\end{itemize}
+
+Esta combinación —$\epsilon$-prediction, calendario lineal, muestreo
+ancestral— constituye la línea base canónica del paradigma. El
+\Cref{cap:pet} parte de ella y la mejora con las elecciones
+discutidas en la \Cref{subsec:parametrizaciones} (parametrización
+$\mathbf{v}$, calendario cosenoidal, muestreo DDIM).
+
+\section{Arquitectura del modelo}
+\label{sec:mariposas-arquitectura}
+
+La red neuronal $\boldsymbol{\varepsilon}_\theta(\mathbf{x}_t, t)$,
+encargada de predecir el ruido, es una UNet2D con bloques ResNet
+y atención espacial. La arquitectura presenta seis niveles de
+resolución con canales $(128, 128, 256, 256, 512, 512)$ y dos
+capas ResNet por bloque. La atención multi-cabeza se incorpora
+únicamente en el quinto nivel, tanto en el camino descendente
+(\texttt{AttnDownBlock2D}) como en el ascendente
+(\texttt{AttnUpBlock2D}), donde la resolución espacial es
+suficientemente reducida para que el coste cuadrático de la
+atención sea asumible.
+
+El paso temporal $t$ se inyecta en cada bloque ResNet mediante
+\textit{embeddings} sinusoidales, análogos a los empleados en el
+Transformer original, de modo que el modelo aprende una política
+de \textit{denoising} condicional en el nivel de ruido.
+
+\section{Configuración del entrenamiento}
+\label{sec:mariposas-config}
+
+El modelo se optimiza con AdamW con tasa de aprendizaje inicial
+$\eta = 10^{-4}$ y un planificador cosenoidal con 500 pasos de
+calentamiento (\textit{warmup}). El entrenamiento se lleva a cabo
+durante 100 épocas con precisión mixta \texttt{fp16} para reducir
+el consumo de memoria, y se recortan los gradientes a norma
+máxima 1.0 para garantizar la estabilidad numérica. Toda esta
+fase preliminar se ejecuta \textbf{localmente} sobre un MacBook
+Pro M4 Pro con aceleración MPS, suficiente para entrenar el
+modelo a $256 \times 256$ en un plazo razonable y validar el
+flujo de entrenamiento e inferencia antes de pasar a la tarea de
+reconstrucción PET (véase \Cref{sec:pet-entorno-cloud}).
+
+\section{Aprendizajes y resultados}
+\label{sec:mariposas-aprendizajes}
+
+Los modelos de difusión son buenos generalizando, ya que es más
+complicado que puedan memorizar los ejemplos de entrenamiento,
+dado que van a ver las mismas imágenes pero con una cantidad de
+ruido completamente diferente entre una época y otra. Se ven
+forzados a aprender la distribución subyacente de las imágenes
+que analizan, en este caso aprendiendo cómo es una mariposa.
+Aprender a predecir la cantidad de ruido que hay en una imagen
+es matemáticamente equivalente a predecir la imagen de una
+mariposa a partir de una imagen ruidosa.
+
+Se ha observado que la pérdida durante el entrenamiento decrece
+muy rápidamente en las primeras épocas, y después se estabiliza
+a lo largo de todo el proceso de entrenamiento. Esto no significa
+que el modelo deje de aprender una vez se estabiliza la pérdida,
+sino que aprende a predecir la cantidad de ruido que hay en las
+imágenes más rápidamente; pero los parámetros se siguen
+actualizando y aprendiendo con más certeza la distribución
+subyacente de imágenes de mariposas. Esta observación —que la
+pérdida de entrenamiento es una mala señal de convergencia para
+los modelos de difusión— se convertirá en una decisión de diseño
+en el experimento principal
+(\Cref{subsec:pet-config}).
+
+Para ilustrar este fenómeno comparamos las muestras generadas por
+el modelo en dos momentos opuestos del entrenamiento: las primeras
+20 épocas y las últimas 20 épocas (cada panel corresponde al
+\textit{checkpoint} guardado al final de la época indicada).
+
+La \Cref{fig:mariposas-tempranas} recoge las muestras de las
+primeras 20 épocas, concretamente las correspondientes a los
+\textit{checkpoints} de las épocas~10 y~20. En esta fase temprana
+las mariposas apenas son reconocibles: aparecen como manchas de
+color difusas, sin contornos definidos ni simetría, y con
+texturas dominadas por artefactos de alta frecuencia. El modelo ya
+ha captado la paleta cromática general del conjunto de datos
+(tonos cálidos sobre fondos vegetales), pero todavía no ha
+aprendido la estructura espacial que caracteriza a una mariposa.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.35\linewidth]{img/generated_butterflies/256pix_0009.png}\hspace{1em}
+    \includegraphics[width=0.35\linewidth]{img/generated_butterflies/256pix_0019.png}
+    \caption{Muestras de las primeras 20 épocas a resolución
+    $256 \times 256$: \textit{checkpoints} al final de las
+    épocas~10 (izquierda) y~20 (derecha). Las muestras son borrosas
+    y carecen de estructura coherente, aunque ya reproducen la
+    paleta cromática del conjunto de entrenamiento.}
+    \label{fig:mariposas-tempranas}
+\end{figure}
+
+En contraste, la \Cref{fig:mariposas-tardias} muestra las muestras
+de las últimas 20 épocas, correspondientes a los
+\textit{checkpoints} de las épocas~90 y~100. A pesar de que la
+pérdida es prácticamente la misma que en épocas más tempranas, la
+calidad perceptual ha mejorado de forma notable: la red genera
+mariposas con siluetas reconocibles, simetría bilateral aproximada
+y patrones de color coherentes con la distribución de
+entrenamiento. Se observa que las imágenes empiezan a ser buenas
+en torno a la época~90 y se estabilizan en la época~100.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.35\linewidth]{img/generated_butterflies/256pix_0089.png}\hspace{1em}
+    \includegraphics[width=0.35\linewidth]{img/generated_butterflies/256pix_0099.png}
+    \caption{Muestras de las últimas 20 épocas a resolución
+    $256 \times 256$: \textit{checkpoints} al final de las
+    épocas~90 (izquierda) y~100 (derecha). Las muestras exhiben
+    siluetas y simetrías reconocibles y patrones de color
+    consistentes con la distribución de entrenamiento.}
+    \label{fig:mariposas-tardias}
+\end{figure}
+
+\paragraph{Comparación en inferencia: $128 \times 128$ frente a
+$256 \times 256$.}
+Una vez analizada la evolución del entrenamiento, comparamos la
+calidad de las muestras obtenidas en inferencia con las dos
+resoluciones consideradas. La \Cref{fig:mariposas-128} muestra dos
+ejemplos generados por la iteración previa del experimento,
+entrenada con reescalado directo a $128 \times 128$ sin preservar
+la relación de aspecto. Aunque la red aprende ciertas
+regularidades de color y forma, las mariposas aparecen
+visiblemente deformadas, lo cual ilustra el impacto del
+preprocesamiento sobre la calidad final.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.35\linewidth]{img/generated_butterflies/128pix_sample1.jpeg}\hspace{1em}
+    \includegraphics[width=0.35\linewidth]{img/generated_butterflies/128pix_sample2.jpeg}
+    \caption{Muestras en inferencia a resolución $128 \times 128$
+    (reescalado directo sin \textit{padding}). Las muestras
+    presentan deformaciones sistemáticas heredadas del
+    preprocesamiento.}
+    \label{fig:mariposas-128}
+\end{figure}
+
+Por su parte, la \Cref{fig:mariposas-256} recoge dos ejemplos
+generados en inferencia a resolución $256 \times 256$. Frente a la
+línea base anterior, estas muestras presentan siluetas mucho más
+nítidas y proporciones realistas, sin las deformaciones
+sistemáticas de la versión a $128 \times 128$. El aumento de
+resolución, combinado con un preprocesamiento que preserva la
+relación de aspecto, se traduce en mariposas con mayor nivel de
+detalle y mejor definición de los patrones alares.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.35\linewidth]{img/generated_butterflies/256pix_sample1.jpeg}\hspace{1em}
+    \includegraphics[width=0.35\linewidth]{img/generated_butterflies/256pix_sample2.jpeg}
+    \caption{Muestras en inferencia a resolución $256 \times 256$.
+    Frente a la línea base de $128 \times 128$, las muestras son
+    más nítidas, con proporciones realistas y mayor nivel de
+    detalle en los patrones alares.}
+    \label{fig:mariposas-256}
+\end{figure}

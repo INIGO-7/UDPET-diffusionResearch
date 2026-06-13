@@ -11,7 +11,10 @@
 de los modelos de difusión, experimento controlado con mariposas,
 diseño e implementación del sistema de reconstrucción PET en dos
 \textit{pipelines} (supervisado condicional y prior no
-condicional con DPS), evaluación sobre el conjunto de test.}
+condicional con DPS) más dos líneas base discriminativas (U-Net
+de regresión y RED-CNN), infraestructura reproducible en la nube,
+evaluación comparativa sobre el conjunto de test y análisis de
+costes.}
 
 \section{Resultados principales}
 \label{sec:resultados}
@@ -85,7 +88,7 @@ implementación actual.
     \item \textbf{Reponderado de pérdida por SNR mínimo.}
     Activación del \textit{Min-SNR-$\gamma$} de Hang et
     al.~\cite{hang2023minsnr} si la convergencia del
-    \textit{v-prediction} con 30 épocas resulta insuficiente.
+    \textit{v-prediction} con 100 épocas resulta insuficiente.
 
     \item \textbf{Modelos puente (I\textsuperscript{2}SB).}
     Liu et al.~\cite{liu2023i2sb} proponen entrenar un modelo
