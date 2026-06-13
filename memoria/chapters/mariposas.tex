@@ -72,21 +72,79 @@ $\mathbf{v}$, calendario cosenoidal, muestreo DDIM).
 \section{Arquitectura del modelo}
 \label{sec:mariposas-arquitectura}
 
-La red neuronal $\boldsymbol{\varepsilon}_\theta(\mathbf{x}_t, t)$,
-encargada de predecir el ruido, es una UNet2D con bloques ResNet
-y atención espacial. La arquitectura presenta seis niveles de
+La red neuronal $\boldsymbol{\varepsilon}_\theta(\mathbf{x}_t, t)$
+encargada de predecir el ruido es una \emph{U-Net}, la arquitectura
+convolucional que se ha consolidado como columna vertebral de
+prácticamente todos los modelos de difusión sobre imágenes. Conviene
+detenerse brevemente en por qué esta arquitectura —y no otra— es la
+elección natural para la tarea de \textit{denoising}.
+
+La U-Net, introducida por Ronneberger et
+al.~\cite{ronneberger2015unet} para segmentación de imágenes
+biomédicas, es una red \emph{codificador--decodificador} con forma de
+«U» (\Cref{fig:unet}). El \textbf{camino de contracción} (rama
+izquierda) alterna convoluciones y submuestreos que reducen
+progresivamente la resolución espacial mientras aumentan el número de
+canales: la red comprime la imagen en una representación cada vez más
+abstracta y de menor resolución, capturando contexto a gran escala.
+El \textbf{camino de expansión} (rama derecha) hace lo inverso,
+recuperando la resolución mediante sobremuestreos hasta producir una
+salida con las mismas dimensiones espaciales que la entrada.
+
+El elemento distintivo son las \textbf{conexiones de salto}
+(\textit{skip connections}, flechas grises horizontales en la
+\Cref{fig:unet}): cada nivel del decodificador recibe, concatenado,
+el mapa de características del nivel homólogo del codificador. Estas
+conexiones reinyectan el detalle espacial de alta frecuencia —bordes,
+texturas, localización precisa— que de otro modo se perdería en el
+cuello de botella. Es justamente esta propiedad la que hace a la
+U-Net idónea para los problemas de predicción densa píxel a píxel:
+la salida debe tener la misma resolución que la entrada y preservar
+su estructura fina, combinando contexto global (\emph{qué} hay en la
+imagen) con detalle local (\emph{dónde} está exactamente). En nuestro
+caso esa salida no es un mapa de segmentación, sino la predicción del
+ruido $\boldsymbol{\varepsilon}$ —y, en el experimento PET, de
+$\mathbf{v}$—, una tarea que comparte exactamente la misma exigencia
+estructural.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.9\linewidth]{img/U-net_example.png}
+    \caption{Arquitectura U-Net original de Ronneberger et
+    al.~\cite{ronneberger2015unet}. El camino de contracción
+    (izquierda) reduce la resolución y aumenta los canales; el de
+    expansión (derecha) la restaura mediante \textit{up-convolutions};
+    las flechas grises horizontales son las conexiones de salto que
+    reinyectan el detalle espacial del codificador en el decodificador.
+    El ejemplo corresponde a la tarea de segmentación para la que se
+    concibió (salida de dos canales de clase); las U-Net de difusión
+    conservan esta topología en «U» pero añaden \textit{embeddings} de
+    paso temporal y bloques de atención, y producen una salida de la
+    misma naturaleza que la entrada.}
+    \label{fig:unet}
+\end{figure}
+
+Frente a la U-Net original —concebida para segmentación, con una
+salida de pocos canales de clase y recortes de borde
+(\textit{valid padding})—, las U-Net de difusión incorporan dos
+adaptaciones clave: \textbf{embeddings de paso temporal}, que informan
+a la red del nivel de ruido en el que opera, y \textbf{bloques
+residuales y de atención} en lugar de las convoluciones simples del
+diseño de 2015.
+
+Nuestra implementación concreta (un \texttt{UNet2DModel} de la
+librería \texttt{diffusers}) presenta seis niveles de
 resolución con canales $(128, 128, 256, 256, 512, 512)$ y dos
 capas ResNet por bloque. La atención multi-cabeza se incorpora
 únicamente en el quinto nivel, tanto en el camino descendente
 (\texttt{AttnDownBlock2D}) como en el ascendente
 (\texttt{AttnUpBlock2D}), donde la resolución espacial es
 suficientemente reducida para que el coste cuadrático de la
-atención sea asumible.
-
-El paso temporal $t$ se inyecta en cada bloque ResNet mediante
-\textit{embeddings} sinusoidales, análogos a los empleados en el
-Transformer original, de modo que el modelo aprende una política
-de \textit{denoising} condicional en el nivel de ruido.
+atención sea asumible. El paso temporal $t$ se inyecta en cada
+bloque ResNet mediante \textit{embeddings} sinusoidales, análogos a
+los empleados en el Transformer original, de modo que el modelo
+aprende una política de \textit{denoising} condicional en el nivel
+de ruido.
 
 \section{Configuración del entrenamiento}
 \label{sec:mariposas-config}

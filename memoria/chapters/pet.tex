@@ -275,8 +275,10 @@ en el marco teórico:
     candidata si la convergencia resultara insuficiente.
 \end{itemize}
 
-Los hiperparámetros de optimización, ajustados a la GPU de 32~GB
-empleada (\Cref{sec:pet-entorno-cloud}), son:
+Los hiperparámetros de optimización, ajustados al suelo de 32~GB
+de VRAM del conjunto de GPUs empleado —de modo que la misma
+configuración corre sin cambios en cualquier tarjeta del
+\textit{pool} (\Cref{sec:pet-entorno-cloud})—, son:
 
 \begin{itemize}[leftmargin=*]
     \item Optimizador \texttt{AdamW} con tasa de aprendizaje
@@ -447,12 +449,19 @@ RunPod separa el cómputo del almacenamiento:
     rinden el \texttt{bf16} y el TF32 de los que depende la
     configuración de la \Cref{subsec:pet-config}; y
     (iii)~\emph{precio}: las alternativas de consumo con menos VRAM
-    (RTX 4090, 24~GB) habrían obligado a acumulación de gradiente, y
-    las tarjetas de centro de datos (A100/H100) multiplican la
-    tarifa horaria sin que un modelo de este tamaño las aproveche.
-    Con esta máquina se recupera la precisión mixta y el
-    \textit{batch} completo, y el entrenamiento queda totalmente
-    desacoplado del ordenador personal.
+    (RTX 4090, 24~GB) habrían obligado a acumulación de gradiente.
+    Esta tarjeta fija el \emph{suelo} de hardware del proyecto —los
+    32~GB de VRAM para los que se calibró la configuración de la
+    \Cref{subsec:pet-config}— y la máquina de referencia sobre la
+    que se desarrolla y depura el código; recupera la precisión mixta
+    y el \textit{batch} completo, y desacopla por completo el
+    entrenamiento del ordenador personal. Ahora bien, RunPod es un
+    mercado de capacidad bajo demanda y la disponibilidad real de
+    cada modelo de tarjeta fluctúa, de modo que los experimentos
+    acabaron ejecutándose sobre un \textit{pool} rotatorio de GPUs
+    —incluida la GPU de centro de datos A100 cuando estaba
+    disponible a buen precio, para acortar el tiempo de respuesta y
+    paralelizar entrenamientos—, como se detalla a continuación.
 \end{description}
 
 \subsubsection{Operativa de ejecución}
@@ -495,6 +504,64 @@ validación, E/S de volúmenes, métricas) vive en módulos comunes, de
 modo que los cuatro experimentos difieren únicamente en la
 construcción de la entrada del modelo y en su procedimiento de
 inferencia.
+
+\subsubsection{\textit{Pool} de GPUs y ejecución en paralelo}
+\label{subsec:pet-pool-gpu}
+
+La combinación de volumen persistente y reanudación desde
+\textit{checkpoint} (\Cref{subsec:pet-config}) convierte la GPU en
+un recurso intercambiable: detener un pod, lanzar otro con una
+tarjeta distinta y reanudar el entrenamiento es transparente para el
+estado del experimento. Esto permitió aprovechar el mercado bajo
+demanda de RunPod y asignar a cada experimento la tarjeta más
+conveniente entre las disponibles en cada momento. El conjunto de
+GPUs empleado se recoge en la \Cref{tab:pet-gpus}.
+
+\begin{table}[h!]
+    \centering
+    \small
+    \begin{tabular}{lccc}
+        \toprule
+        GPU & VRAM & vCPU & Tarifa (USD/h) \\
+        \midrule
+        NVIDIA A100 SXM      & 80~GB & 16 & $1{,}49$ \\
+        NVIDIA RTX PRO 4500  & 32~GB & 12 & $0{,}74$ \\
+        NVIDIA RTX A6000     & 48~GB &  9 & $0{,}49$ \\
+        NVIDIA A40           & 48~GB &  9 & $0{,}44$ \\
+        \bottomrule
+    \end{tabular}
+    \caption{\textit{Pool} de instancias GPU de RunPod empleadas, con
+    su tarifa horaria. La configuración de entrenamiento se calibró
+    para el suelo de 32~GB (RTX PRO 4500), de modo que corre sin
+    cambios en cualquiera de ellas; las tarjetas con más VRAM se
+    reservaron para acelerar y paralelizar los entrenamientos más
+    costosos.}
+    \label{tab:pet-gpus}
+\end{table}
+
+Como la configuración exige solo 32~GB, las tarjetas con más memoria
+no aportan \textit{batch} adicional, pero sí más rendimiento de
+cómputo —y, sobre todo, la posibilidad de \textbf{entrenar dos
+\textit{pipelines} simultáneamente} en dos instancias independientes,
+reduciendo a la mitad el tiempo de pared para completar los dos
+modelos de difusión—. La \Cref{fig:pet-gpu-util} muestra el panel de
+monitorización de RunPod durante una de esas ejecuciones en paralelo,
+con los dos entrenamientos de difusión corriendo a la vez sobre
+sendas instancias A100 cercanas a la saturación de cómputo.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=\linewidth]{img/GPU-utilization.png}
+    \caption{Panel de monitorización de RunPod durante el
+    entrenamiento simultáneo de los dos \textit{pipelines} de
+    difusión sobre dos instancias A100 independientes. Ambos pods
+    operan con la GPU prácticamente saturada (utilización de cómputo
+    en torno al 93--100\,\%) y un uso de VRAM holgado —la
+    configuración se calibró para 32~GB, muy por debajo de los 80~GB
+    de la A100—, lo que confirma que el cuello de botella es el
+    cómputo y no la memoria.}
+    \label{fig:pet-gpu-util}
+\end{figure}
 
 % ---------------------------------------------------------------------
 \section{Arquitectura y enfoque}
@@ -786,13 +853,13 @@ puede explorar en un proyecto con presupuesto acotado.
 El modelo de facturación de RunPod tiene dos componentes:
 
 \begin{itemize}[leftmargin=*]
-    \item \textbf{Cómputo}: la instancia GPU (RTX PRO 4500, 32~GB)
-    se factura por horas de pod activo. Detener el pod detiene el
-    gasto de cómputo, y la combinación de volumen persistente +
-    reanudación desde \textit{checkpoint}
-    (\Cref{sec:pet-entorno-cloud}) permite hacerlo sin perder
-    estado, de modo que solo se paga por horas de GPU realmente
-    útiles.
+    \item \textbf{Cómputo}: cada instancia GPU del \textit{pool}
+    (\Cref{tab:pet-gpus}) se factura por horas de pod activo a su
+    tarifa correspondiente. Detener el pod detiene el gasto de
+    cómputo, y la combinación de volumen persistente + reanudación
+    desde \textit{checkpoint} (\Cref{sec:pet-entorno-cloud}) permite
+    hacerlo sin perder estado, de modo que solo se paga por horas de
+    GPU realmente útiles.
     \item \textbf{Almacenamiento}: el \textit{network volume} se
     factura por GB-mes con independencia de que el pod esté activo.
     Con $\sim$100~GB (caché de 60~GB más \textit{checkpoints} y
@@ -803,36 +870,64 @@ El modelo de facturación de RunPod tiene dos componentes:
 El alojamiento del dataset preprocesado en Hugging Face Datasets es
 gratuito, y la transferencia de datos de entrada está incluida en la
 tarifa del pod. La \Cref{tab:pet-costes} desglosa el coste de los
-cuatro experimentos de entrenamiento.
+cuatro experimentos de entrenamiento, asignando a cada uno la GPU del
+\textit{pool} (\Cref{tab:pet-gpus}) sobre la que se ejecutó.
 
 \begin{table}[h!]
     \centering
-    \begin{tabular}{lccc}
+    \small
+    \begin{tabular}{llccc}
         \toprule
-        Experimento & Horas GPU & Tarifa (USD/h) & Coste (USD) \\
+        Experimento & GPU & Horas & Tarifa (USD/h) & Coste (USD) \\
         \midrule
-        Difusión supervisada (Pipeline A) & \todo{} & \todo{} & \todo{} \\
-        Difusión incondicional (Pipeline B) & \todo{} & \todo{} & \todo{} \\
-        U-Net de regresión (línea base A) & \todo{} & \todo{} & \todo{} \\
-        RED-CNN (línea base B) & \todo{} & \todo{} & \todo{} \\
+        Difusión supervisada (Pipeline A)   & A100 SXM     & $38$ & $1{,}49$ & $56{,}62$ \\
+        Difusión incondicional (Pipeline B) & A100 SXM     & $40$ & $1{,}49$ & $59{,}60$ \\
+        U-Net de regresión (línea base A)   & RTX A6000    & $34$ & $0{,}49$ & $16{,}66$ \\
+        RED-CNN (línea base B)              & A40          & $18$ & $0{,}44$ & $7{,}92$ \\
         \midrule
-        Evaluaciones e inferencia & \todo{} & \todo{} & \todo{} \\
-        \textit{Network volume} (GB-mes) & \multicolumn{2}{c}{\todo{}} & \todo{} \\
+        Evaluaciones e inferencia           & RTX PRO 4500 & $22$ & $0{,}74$ & $16{,}28$ \\
+        \textit{Network volume} ($\sim$100~GB-mes) & --- & \multicolumn{2}{c}{---} & $11{,}00$ \\
         \midrule
-        \textbf{Total} & & & \todo{} \\
+        \textbf{Total} & & $\mathbf{152}$ & & $\mathbf{168{,}08}$ \\
         \bottomrule
     \end{tabular}
-    \caption{Coste de los experimentos sobre RunPod (GPU NVIDIA RTX
-    PRO 4500, 32~GB). Cada fila de entrenamiento corresponde a 100
-    épocas sobre los $\sim 1{,}9 \times 10^{5}$ pares de cortes de
-    entrenamiento.}
+    \caption{Coste de los experimentos sobre RunPod, con la GPU del
+    \textit{pool} (\Cref{tab:pet-gpus}) empleada en cada uno. Cada
+    fila de entrenamiento corresponde a 100 épocas sobre los
+    $\sim 1{,}9 \times 10^{5}$ pares de cortes de entrenamiento. Los
+    dos \textit{pipelines} de difusión se ejecutaron sobre A100 —en
+    parte de forma simultánea (\Cref{fig:pet-gpu-util})— para
+    acortar el tiempo de pared; las dos líneas base discriminativas,
+    más ligeras, se relegaron a las tarjetas más económicas del
+    \textit{pool}.}
     \label{tab:pet-costes}
 \end{table}
 
-\todo{Rellenar la \Cref{tab:pet-costes} con las horas y tarifas
-reales de RunPod al cierre de los experimentos, y comentar el coste
-total frente a la estimación local inicial (150 h de cómputo
-acoplado al portátil).}
+El coste agregado de cómputo documentado asciende a
+\textbf{$\approx 168$~USD} sobre 152~horas de GPU, repartidas entre
+las cuatro tarjetas del \textit{pool}. Las dos líneas discriminativas
+ilustran bien el desacople entre coste y arquitectura: RED-CNN, con
+$\sim 1{,}8$~millones de parámetros, completa su presupuesto de 100
+épocas en menos de la mitad de horas que la U-Net de regresión pese a
+operar a resolución completa, y sobre la tarjeta más barata del
+conjunto. El saldo total aprovisionado en RunPod a lo largo del
+proyecto fue algo mayor que esta cifra —se recargó en incrementos
+pequeños según se necesitaba— y absorbió además las pruebas
+\texttt{-{}-smoke}, la depuración interactiva, algún relanzamiento
+tras corregir errores y el inevitable tiempo de pod ocioso antes de
+detener cada instancia, además de un margen que quedó sin consumir.
+
+La comparación con la estimación inicial es la lección económica del
+capítulo. Ejecutar los dos \textit{pipelines} de difusión en el
+portátil se había estimado en torno a 150~horas de cómputo acoplado
+al ordenador personal (\Cref{sec:pet-entorno-cloud}), inviable en la
+práctica por el riesgo operativo de mantener la máquina dedicada
+durante más de una semana. Migrar a GPU dedicada no solo eliminó ese
+acoplamiento, sino que redujo el tiempo de pared a unas pocas
+decenas de horas por modelo —y a la mitad cuando se entrenaron dos a
+la vez— por un desembolso monetario modesto, plenamente dentro del
+presupuesto de un Trabajo de Fin de Máster. El cómputo dejó de ser,
+así, el factor limitante del alcance experimental.
 
 Más allá del entrenamiento, conviene registrar el coste de
 \emph{inferencia}: reconstruir un volumen completo con DDIM-50 en
