@@ -12,6 +12,7 @@ checkpoints/*
 */checkpoints/*
 evaluations/*
 */evaluations/*
+analysis
 
 # Image formats
 *.png
