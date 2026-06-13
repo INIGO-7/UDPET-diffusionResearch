@@ -183,6 +183,69 @@ Flags:
 - `--save-path PATH`: guarda la figura en disco; si se omite, se abre interactivamente.
 - `--omega FLOAT`: solo `unconditional`.
 
+### 2.6 `slice-recon` — exportar PNGs limpios de un corte (figuras de la memoria)
+
+Hace inferencia sobre **un solo corte** de un paciente con un modelo dado y guarda **tres PNG limpios** (solo píxeles, sin ejes/título/colorbar) a la **resolución original** del escáner. Las ejecuciones se organizan por paciente+corte: `reports/slice_recon/<patient_id>_<slice>/<pipeline>_<checkpoint>_<uuid8>/`, de modo que todas las reconstrucciones del mismo corte (distintos modelos/épocas) conviven bajo el mismo padre. Dentro de cada carpeta de ejecución:
+
+- `full_dose.png` — corte full-dose crudo, grid original, sin tocar.
+- `low_dose.png` — corte low-dose equivalente, grid original, sin tocar.
+- `recon_<pipeline>_<checkpoint>.png` — reconstrucción del modelo remapeada al grid original (asinh⁻¹ → resize → bbox).
+
+Los tres comparten **una única ventana de intensidad** (`vmin=0`, `vmax`=percentil 99.5 del foreground del full-dose) para que sean directamente comparables: el low-dose se ve genuinamente tenue/ruidoso (~1/20 de cuentas) y una buena reconstrucción iguala al full-dose. Se escribe además un `meta.json` con todos los parámetros (paciente, corte, modelo, `M`, `k`, ventana, split al que pertenece el paciente, ...).
+
+A diferencia de `preview`, **acepta cualquier paciente** (train/val/test) por ser una herramienta de reporte; el split se registra en `meta.json`. Toda la geometría (bbox / `M` / cortes conservados) se deriva **en runtime** del NIfTI de baja dosis crudo (como `reconstruct`), así que no necesita la caché de preprocesado.
+
+```bash
+# Listar los cortes reconstruibles (kept slices) de un paciente y salir
+python -m src.main slice-recon --pipeline supervised \
+    --patient-id 01122021_1_20211201_164050 --list-slices
+
+# Exportar los 3 PNG de un corte (omite --slice-idx para el corte central)
+python -m src.main slice-recon --pipeline supervised \
+    --checkpoint checkpoints/supervised/checkpoint-epoch-099 \
+    --patient-id 01122021_1_20211201_164050 --slice-idx 320
+```
+
+Flags:
+- `--pipeline {supervised,unconditional,regression,cnn}` (obligatorio).
+- `--checkpoint PATH`: obligatorio salvo con `--list-slices`.
+- `--patient-id ID` (obligatorio): cualquier paciente presente en el dataset crudo.
+- `--slice-idx N`: índice axial z en el grid original; debe ser un corte conservado (foreground). Default: el corte central conservado.
+- `--list-slices`: imprime los índices z reconstruibles del paciente y sale.
+- `--output-dir PATH` (default `reports/slice_recon`): dentro se crea `<patient_id>_<slice>/<pipeline>_<checkpoint>_<uuid8>/`.
+- `--cmap NAME` (default `gray`): colormap de matplotlib para los PNG.
+- `--rot90 N`: rota cada panel 90·N grados (solo orientación de display).
+- `--omega FLOAT`: solo `unconditional`.
+
+### 2.7 `mip-recon` — MIP de volumen completo sobre un plano (figuras de la memoria)
+
+Hermano de `slice-recon`, pero en vez de un corte proyecta el **volumen completo** sobre un plano anatómico (`coronal` / `sagittal` / `axial`) con una **proyección de máxima intensidad** (MIP) — la vista de lectura PET clásica de cuerpo entero. Guarda tres PNG limpios en `reports/MIP_recon/<patient_id>/<pipeline>_<checkpoint>_<uuid8>/`:
+
+- `full_dose_<plane>.png` — MIP del volumen full-dose crudo.
+- `low_dose_<plane>.png` — MIP del volumen low-dose crudo.
+- `recon_<pipeline>_<checkpoint>_<plane>.png` — MIP del volumen reconstruido por el modelo.
+
+La reconstrucción se corre **en runtime sobre todo el volumen** (misma geometría `prepare_low_dose` que `reconstruct`), así que no necesita caché y vale para cualquier paciente y cualquiera de los 4 pipelines. **Nota de coste:** en los pipelines de difusión (`supervised`/`unconditional`) esto muestrea cada corte con DDIM-50, por lo que un volumen entero es lento; las líneas base `cnn`/`regression` son una sola pasada y van rápidas.
+
+Los tres MIP comparten **una única ventana** derivada del MIP de full-dose (`vmin=0`, `vmax`=percentil 99.5 de su foreground). El eje de proyección se elige del affine del NIfTI (`aff2axcodes`) y la imagen se orienta con Superior arriba (coronal/sagital) o Anterior arriba (axial). Se escribe `meta.json` con todos los parámetros.
+
+```bash
+python -m src.main mip-recon --pipeline supervised \
+    --checkpoint checkpoints/supervised/checkpoint-epoch-099 \
+    --patient-id 01122021_1_20211201_164050 --plane coronal
+```
+
+Flags:
+- `--pipeline {supervised,unconditional,regression,cnn}` (obligatorio).
+- `--checkpoint PATH` (obligatorio).
+- `--patient-id ID` (obligatorio): cualquier paciente del dataset crudo.
+- `--plane {coronal,sagittal,axial}` (obligatorio): plano de proyección del MIP.
+- `--output-dir PATH` (default `reports/MIP_recon`): dentro se crea `<patient_id>/<pipeline>_<checkpoint>_<uuid8>/`.
+- `--inference-batch-size` (default 4).
+- `--cmap NAME` (default `gray`).
+- `--rot90 N` / `--flipud` / `--fliplr`: ajuste fino de la orientación de display.
+- `--omega FLOAT`: solo `unconditional`.
+
 ---
 
 ## 3. Llamada directa a los scripts (más control)
@@ -201,6 +264,8 @@ python -m src.reconstruct_regression      --checkpoint ... [flags]
 python -m src.reconstruct_cnn             --checkpoint ... [flags]
 python -m src.evaluate                    --pipeline ... --checkpoint ... --output-dir ...
 python -m src.preview_reconstruction      --pipeline ... [flags]
+python -m src.slice_recon                 --pipeline ... --patient-id ... [flags]
+python -m src.mip_recon                   --pipeline ... --patient-id ... --plane ... [flags]
 ```
 
 ---
@@ -252,7 +317,9 @@ pet_reconstruction/
     ├── visualize.py           figuras 3-panel y 4-panel
     ├── visualize_dataset.py   visor interactivo del dataset crudo (full vs 1/20)
     ├── visualize_reconstruction.py  visor de reconstrucciones + métricas por experimento
-    └── preview_reconstruction.py     comparación de un corte
+    ├── preview_reconstruction.py     comparación de un corte
+    ├── slice_recon.py                exporta PNGs full/low/recon de un corte (figuras memoria)
+    └── mip_recon.py                  exporta MIP full/low/recon de volumen completo por plano
 ```
 
 ---
