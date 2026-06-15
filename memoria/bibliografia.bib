@@ -8,34 +8,43 @@
 % ---------- Estado del arte ----------
 
 @inproceedings{tat2025,
-  author    = {Yaziwel et al.},
-  title     = {Task-Adaptive Transformer for Medical Image Restoration},
+  author    = {Yang, Zhiwen and Zhang, Jiaju and Yi, Yang and Liang,
+               Jian and Wei, Bingzheng and Xu, Yan},
+  title     = {{TAT}: Task-Adaptive Transformer for All-in-One Medical
+               Image Restoration},
   booktitle = {Medical Image Computing and Computer Assisted
                Intervention (MICCAI)},
   year      = {2025},
+  eprint    = {2512.14550},
+  archivePrefix = {arXiv},
   url       = {https://papers.miccai.org/miccai-2025/paper/1155_paper.pdf},
   note      = {Código disponible en \url{https://github.com/Yaziwel/TAT}}
 }
 
 @article{mamba2025,
-  title   = {MAMBA-based model for medical image reconstruction and
-             uncertainty modelling in low-dose PET, fast MRI and
-             sparse-view CT},
+  author  = {Huang, Jiahao and Yang, Liutao and Wang, Fanwen and Wu,
+             Yinzhe and Nan, Yang and Wu, Weiwen and Wang, Chengyan and
+             Shi, Kuangyu and Aviles-Rivero, Angelica I. and
+             Sch\"onlieb, Carola-Bibiane and Zhang, Daoqiang and Yang,
+             Guang},
+  title   = {Enhancing global sensitivity and uncertainty
+             quantification in medical image reconstruction with Monte
+             Carlo arbitrary-masked mamba},
   journal = {Medical Image Analysis},
+  volume  = {99},
+  pages   = {103334},
   year    = {2025},
   url     = {https://www.sciencedirect.com/science/article/pii/S1361841524002597}
 }
 
 @article{ddpem2024,
-  title   = {DDPEM: A Denoising Diffusion Probabilistic Model with
-             Expectation Maximization for Low-Dose PET Image
-             Reconstruction},
+  title   = {Unsupervised low-dose PET image reconstruction based on pre-trained denoising diffusion probabilistic prior},
   journal = {Journal of Nuclear Medicine},
   volume  = {65},
   number  = {Supplement 2},
   year    = {2024},
   pages   = {241109},
-  url     = {https://jnm.snmjournals.org/content/65/supplement_2/241109.abstract}
+  url     = {https://jnm.snmjournals.org/content/65/supplement_2/241109}
 }
 
 @article{bjrai2024,
@@ -61,12 +70,28 @@
 }
 
 @article{ddpmpet2023,
-  title   = {Denoising Diffusion Probabilistic Models for {PET}
-             Image Denoising},
+  author  = {Gong, Kuang and Johnson, Keith A. and El Fakhri, Georges
+             and Li, Quanzheng and Pan, Tinsu},
+  title   = {{PET} Image Denoising Based on Denoising Diffusion
+             Probabilistic Models},
   journal = {European Journal of Nuclear Medicine and Molecular
              Imaging},
   year    = {2023},
   url     = {https://link.springer.com/article/10.1007/s00259-023-06417-8}
+}
+
+@article{ddpet3d,
+  author        = {Xie, Huidong and Gan, Weijie and Zhou, Bo and Chen,
+                   Xiongchao and Liu, Qiong and Guo, Xueqi and Guo,
+                   Liang and An, Hongyu and Kamilov, Ulugbek S. and
+                   Wang, Ge and Liu, Chi},
+  title         = {{DDPET-3D}: Dose-aware Diffusion Model for {3D}
+                   Ultra Low-dose {PET} Imaging},
+  journal       = {arXiv preprint},
+  year          = {2023},
+  eprint        = {2311.04248},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2311.04248}
 }
 
 
@@ -107,6 +132,44 @@
   eprint    = {1505.04597},
   archivePrefix = {arXiv},
   url       = {https://arxiv.org/abs/1505.04597}
+}
+
+@inproceedings{he2016resnet,
+  author    = {He, Kaiming and Zhang, Xiangyu and Ren, Shaoqing and
+               Sun, Jian},
+  title     = {Deep Residual Learning for Image Recognition},
+  booktitle = {IEEE Conference on Computer Vision and Pattern
+               Recognition (CVPR)},
+  pages     = {770--778},
+  year      = {2016},
+  eprint    = {1512.03385},
+  archivePrefix = {arXiv},
+  url       = {https://arxiv.org/abs/1512.03385}
+}
+
+@inproceedings{vaswani2017attention,
+  author    = {Vaswani, Ashish and Shazeer, Noam and Parmar, Niki and
+               Uszkoreit, Jakob and Jones, Llion and Gomez, Aidan N. and
+               Kaiser, Lukasz and Polosukhin, Illia},
+  title     = {Attention Is All You Need},
+  booktitle = {Advances in Neural Information Processing Systems
+               (NeurIPS)},
+  year      = {2017},
+  eprint    = {1706.03762},
+  archivePrefix = {arXiv},
+  url       = {https://arxiv.org/abs/1706.03762}
+}
+
+@inproceedings{zhang2019sagan,
+  author    = {Zhang, Han and Goodfellow, Ian and Metaxas, Dimitris and
+               Odena, Augustus},
+  title     = {Self-Attention Generative Adversarial Networks},
+  booktitle = {International Conference on Machine Learning (ICML)},
+  pages     = {7354--7363},
+  year      = {2019},
+  eprint    = {1805.08318},
+  archivePrefix = {arXiv},
+  url       = {https://arxiv.org/abs/1805.08318}
 }
 
 
@@ -258,4 +321,21 @@
   year          = {2025},
   note          = {Conjunto de datos de pares de vol\'umenes PET de
                    dosis completa y dosis reducida}
+}
+
+@misc{smithsonianbutterflies,
+  author        = {{HuggingFace} community ({huggan})},
+  title         = {Smithsonian Butterflies (subset)},
+  howpublished  = {\url{https://huggingface.co/datasets/huggan/smithsonian_butterflies_subset}},
+  note          = {Conjunto de datos de im\'agenes de mariposas del
+                   Instituto Smithsoniano},
+  year          = {2022}
+}
+
+@misc{diffuserstutorial,
+  author        = {{HuggingFace}},
+  title         = {Train a diffusion model --- {Diffusers} basic
+                   training tutorial},
+  howpublished  = {\url{https://huggingface.co/docs/diffusers/en/tutorials/basic_training}},
+  year          = {2024}
 }
