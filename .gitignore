@@ -13,6 +13,9 @@ checkpoints/*
 evaluations/*
 */evaluations/*
 analysis
+reports
+papers
+img
 
 # Image formats
 *.png
@@ -30,6 +33,10 @@ main.log
 main.out
 main.pdf
 main.toc
+
+# Extensions
+*.fls
+*latex*
 
 # AI
 CLAUDE.md
