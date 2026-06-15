@@ -5,13 +5,33 @@
 \chapter*{Abstract}
 \addcontentsline{toc}{chapter}{Abstract}
 
-\todo{Resumen en inglés (8--15 líneas). Cubrir: contexto del problema
-(reconstrucción de imágenes PET de dosis baja como problema inverso),
-enfoque propuesto (modelos de difusión, comparativa entre pipeline
-supervisado condicional y prior no condicional con guiado de medición),
-materiales (371 pares NIfTI de PET de dosis completa y dosis reducida
-a 1/20), y principales resultados / conclusiones (a rellenar tras la
-fase experimental).}
+Positron Emission Tomography (PET) exposes patients to ionising
+radiation, which motivates acquiring scans at a reduced dose; doing so,
+however, degrades image quality and turns the recovery of a full-dose
+image from its low-dose counterpart into an ill-posed inverse problem.
+This thesis studies denoising diffusion probabilistic models as a
+generative tool for low-dose PET reconstruction and contributes a
+comparative analysis of two distinct diffusion-based methods. The first
+is a \emph{supervised conditional} pipeline, in which the low-dose scan
+is fed as a conditioning channel to a UNet trained to reverse the
+diffusion process. The second is an \emph{unconditional prior with
+measurement guidance}, which learns a full-dose prior and injects the
+observation only at inference time through Diffusion Posterior Sampling
+(DPS). Both methods are built and evaluated on a dataset of 371 paired
+NIfTI volumes (full dose and dose reduced to 1/20), operating slice by
+slice over axial cross-sections. To delimit the contribution of the
+generative paradigm, the two diffusion methods are benchmarked under
+identical data, normalisation and training budget against two classical
+discriminative baselines: a regression UNet (an ablation of the
+diffusion process) and a RED-CNN (the reference convolutional
+architecture for low-dose medical-image denoising). All models are
+compared on the same held-out test set using image-quality metrics
+(PSNR, SSIM, NRMSE) and intensity-preservation metrics. The results show
+that the diffusion methods reconstruct anatomically faithful full-dose
+images and substantially improve over the raw low-dose observation,
+while the classical baselines remain slightly superior in the aggregate
+metrics, a finding discussed together with the associated computational
+cost.
 
 \vspace{1em}
 \noindent\textbf{Keywords:} diffusion models, PET reconstruction,

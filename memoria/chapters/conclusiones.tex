@@ -68,10 +68,32 @@ vigésima parte de la dosis.
 \section{Líneas de desarrollo futuro}
 \label{sec:lineas-futuras}
 
-Se identifican cinco extensiones, ordenadas por proximidad a la
+Se identifican ocho extensiones, ordenadas por proximidad a la
 implementación actual.
 
 \begin{enumerate}[leftmargin=*]
+    \item \textbf{Mayor resolución de entrenamiento ($384^2$).}
+    Sustituir los \textit{slices} de $256^2$ empleados en el
+    entrenamiento por \textit{slices} de $384^2$, una resolución
+    más próxima a los $440^2$ nativos del volumen
+    (\Cref{sec:pet-preprocesado}). Al preservar más detalle
+    espacial cabe esperar un modelo más preciso, cuyas
+    reconstrucciones se acerquen más a la referencia de dosis
+    completa, a costa de un mayor consumo de memoria y cómputo por
+    \textit{slice}. Es la extensión más inmediata, pues se reduce
+    a un cambio de la resolución objetivo en la configuración.
+
+    \item \textbf{Refinamiento de las líneas base U-Net y RED-CNN.}
+    Alterar la arquitectura de los dos modelos discriminativos de
+    referencia y, sobre todo, sustituir su objetivo de
+    entrenamiento por una pérdida más rica que combine varias
+    métricas complementarias (p.\,ej.\ una mezcla ponderada de MAE,
+    MSE y un término estructural tipo SSIM), en lugar de un único
+    error puntual. Dado que estas líneas base ya resultan
+    ligeramente superiores a los \textit{pipelines} de difusión, un
+    objetivo multi-métrica podría ampliar esa ventaja y precisar
+    mejor el techo alcanzable por los métodos discriminativos.
+
     \item \textbf{DPS con $\sigma(\mathbf{y})$ dependiente de la
     intensidad.} Modelar la estadística de Poisson del ruido PET
     propagada a través de la normalización $\operatorname{arcsinh}$
@@ -79,6 +101,20 @@ implementación actual.
     una verosimilitud heteroscedástica. Es la extensión natural
     más cercana al planteamiento sobre el ruido descrito en la
     \Cref{sec:pet-ruido}.
+
+    \item \textbf{Replanteamiento del \textit{pipeline} no
+    condicional mediante modelado explícito del ruido del
+    escáner.} El guiado a posteriori (DPS) no ha producido
+    resultados eficaces y el uso de ruido gaussiano del
+    \textit{schedule} no captura la naturaleza del ruido PET. Se
+    propone abandonar esa estrategia en favor de modelar
+    explícitamente el ruido del escáner con técnicas alternativas
+    —desde verosimilitudes ajustadas a la estadística de Poisson
+    hasta procesos directos que imiten la degradación de dosis
+    baja (véase el ítem sobre modelos puente)—, de modo que el
+    proceso generativo aprenda la transición real entre dosis
+    completa y dosis baja en lugar de una corrupción gaussiana
+    sintética.
 
     \item \textbf{Contexto 2.5D o 3D.} Añadir \textit{slices}
     vecinos como canales adicionales de entrada (2.5D) para

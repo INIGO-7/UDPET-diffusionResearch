@@ -15,12 +15,11 @@ antes de abordar el problema de reconstrucción de imágenes PET.
 \label{sec:mariposas-datos}
 
 Se utiliza el subconjunto \texttt{huggan/smithsonian\_butterflies\_subset}
-del Instituto Smithsoniano. Cada imagen se redimensiona a
+del Instituto Smithsoniano~\cite{smithsonianbutterflies}. Cada imagen se redimensiona a
 $256 \times 256$ píxeles preservando su relación de aspecto: el
 lado más largo se reescala al tamaño objetivo, y el lado más corto
 se rellena con relleno blanco simétrico hasta alcanzar una imagen
-cuadrada (operación \texttt{ResizeToFit} + \texttt{PadToSquare} en
-el código fuente). Sobre el resultado se aplica volteo horizontal
+cuadrada. Sobre el resultado se aplica volteo horizontal
 aleatorio como aumento de datos, y se normaliza al rango $[-1, 1]$
 mediante la transformación
 \begin{equation}
@@ -29,7 +28,8 @@ mediante la transformación
 El conjunto se carga en lotes de orden aleatorio en cada época.
 
 Una iteración previa de este experimento siguió literalmente el
-\textit{tutorial} oficial de la librería \texttt{diffusers}, con
+\textit{tutorial} oficial de la librería
+\texttt{diffusers}~\cite{diffuserstutorial}, con
 imágenes reescaladas directamente a $128 \times 128$ píxeles. Ese
 reescalado directo (sin preservar relación de aspecto ni rellenar
 para mantener la geometría original) introduce una deformación
@@ -130,7 +130,84 @@ salida de pocos canales de clase y recortes de borde
 adaptaciones clave: \textbf{embeddings de paso temporal}, que informan
 a la red del nivel de ruido en el que opera, y \textbf{bloques
 residuales y de atención} en lugar de las convoluciones simples del
-diseño de 2015.
+diseño de 2015. Conviene detenerse en estos dos tipos de bloque, pues
+son los ladrillos con los que se construye toda la red.
+
+\subsection*{Bloques residuales}
+
+Un \textbf{bloque residual}, introducido por He et
+al.~\cite{he2016resnet}, no aprende directamente la transformación
+deseada $H(\mathbf{x})$, sino el \emph{residuo} respecto a la entrada,
+$F(\mathbf{x}) = H(\mathbf{x}) - \mathbf{x}$, de modo que su salida es
+$F(\mathbf{x}) + \mathbf{x}$ (\Cref{fig:bloque-residual}). La suma de
+la entrada original —la \emph{conexión de salto} interna del bloque,
+distinta de las \textit{skip connections} de la «U»— crea un camino
+directo por el que el gradiente fluye sin atenuarse, lo que permite
+apilar muchos bloques y entrenar redes profundas sin que el gradiente
+se desvanezca. Esta es la razón por la que las U-Net modernas
+sustituyen las convoluciones simples de 2015 por pilas de bloques
+residuales.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.55\linewidth]{img/bloque_residual.png}
+    \caption{Esquema del principio residual: la rama principal aplica
+    una secuencia de operaciones a la entrada y su salida se
+    \emph{suma} a la propia entrada a través de la conexión de salto
+    interna (\textit{skip}), produciendo $F(\mathbf{x}) + \mathbf{x}$.
+    La figura ilustra el concepto general en su formulación original
+    (convoluciones con \textit{batch normalization} y ReLU); en
+    nuestra U-Net de difusión cada bloque emplea \textit{group
+    normalization} y activaciones SiLU en lugar de \textit{batch
+    normalization} y ReLU, e inyecta además el \textit{embedding} del
+    paso temporal $t$ (sumándolo a los mapas de características entre
+    sus dos convoluciones), de manera que el comportamiento del bloque
+    queda condicionado al nivel de ruido.}
+    \label{fig:bloque-residual}
+\end{figure}
+
+\subsection*{Bloques de atención}
+
+El segundo tipo de bloque incorpora un mecanismo de
+\textbf{autoatención} (\textit{self-attention}), el mismo que sustenta
+los Transformers~\cite{vaswani2017attention} y que, adaptado a mapas
+de características convolucionales, popularizó SAGAN~\cite{zhang2019sagan}.
+Mientras que una convolución solo combina información dentro de su
+ventana local, la autoatención permite que \emph{cada} posición
+espacial se relacione con \emph{todas} las demás, capturando
+dependencias de largo alcance —por ejemplo, la simetría global de las
+alas de una mariposa o, en el caso PET, la coherencia anatómica entre
+regiones distantes—. Como ilustra la \Cref{fig:autoatencion}, a partir
+del mapa de características de entrada se obtienen mediante tres
+convoluciones $1\times1$ tres proyecciones —consulta ($f$), clave
+($g$) y valor ($h$)—; el producto entre consulta y clave, normalizado
+con \textit{softmax}, produce el \emph{mapa de atención}, que asigna a
+cada posición un peso sobre todas las demás; finalmente la salida es
+la suma ponderada de los valores según ese mapa.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.95\linewidth]{img/mecanismo_atencion.png}
+    \caption{Mecanismo de autoatención sobre mapas de características
+    convolucionales~\cite{zhang2019sagan}. Tres convoluciones
+    $1\times1$ proyectan la entrada en consulta $f(\mathbf{x})$, clave
+    $g(\mathbf{x})$ y valor $h(\mathbf{x})$; el producto consulta--clave
+    seguido de \textit{softmax} genera el mapa de atención, que pondera
+    los valores para producir los mapas de características
+    autoatendidos. El coste de calcular el mapa de atención crece de
+    forma \emph{cuadrática} con el número de posiciones espaciales
+    $N = H \times W$, lo que obliga a reservar estos bloques para los
+    niveles de menor resolución.}
+    \label{fig:autoatencion}
+\end{figure}
+
+El precio de esta capacidad es que el mapa de atención tiene tamaño
+$N \times N$ con $N = H \times W$ posiciones espaciales: su coste es
+\emph{cuadrático} en el número de píxeles. Aplicarlo a alta resolución
+(p.~ej.\ $256^2 = 65\,536$ posiciones) dispararía el consumo de
+memoria y cómputo; por ello la atención se reserva para los niveles
+profundos de la «U», donde la resolución ya se ha reducido lo
+suficiente.
 
 Nuestra implementación concreta (un \texttt{UNet2DModel} de la
 librería \texttt{diffusers}) presenta seis niveles de
@@ -138,9 +215,8 @@ resolución con canales $(128, 128, 256, 256, 512, 512)$ y dos
 capas ResNet por bloque. La atención multi-cabeza se incorpora
 únicamente en el quinto nivel, tanto en el camino descendente
 (\texttt{AttnDownBlock2D}) como en el ascendente
-(\texttt{AttnUpBlock2D}), donde la resolución espacial es
-suficientemente reducida para que el coste cuadrático de la
-atención sea asumible. El paso temporal $t$ se inyecta en cada
+(\texttt{AttnUpBlock2D}), el más profundo de la «U», por el motivo
+de coste recién expuesto. El paso temporal $t$ se inyecta en cada
 bloque ResNet mediante \textit{embeddings} sinusoidales, análogos a
 los empleados en el Transformer original, de modo que el modelo
 aprende una política de \textit{denoising} condicional en el nivel
@@ -151,7 +227,16 @@ de ruido.
 
 El modelo se optimiza con AdamW con tasa de aprendizaje inicial
 $\eta = 10^{-4}$ y un planificador cosenoidal con 500 pasos de
-calentamiento (\textit{warmup}). El entrenamiento se lleva a cabo
+calentamiento (\textit{warmup}). Este planificador modula la tasa de
+aprendizaje en dos fases: durante los primeros 500 pasos de
+entrenamiento (\textit{warmup}) la tasa crece linealmente desde 0
+hasta su valor máximo $\eta$, lo que evita actualizaciones bruscas
+de los pesos cuando el modelo aún está sin entrenar; a partir de ahí
+la tasa decae siguiendo una curva cosenoidal —suave al principio,
+más pronunciada en la zona media y de nuevo suave al final— hasta
+aproximarse a 0 en la última época, de modo que el ajuste final de
+los parámetros se realiza con pasos cada vez más pequeños. El
+entrenamiento se lleva a cabo
 durante 100 épocas con precisión mixta \texttt{fp16} para reducir
 el consumo de memoria, y se recortan los gradientes a norma
 máxima 1.0 para garantizar la estabilidad numérica. Toda esta
@@ -186,6 +271,28 @@ pérdida de entrenamiento es una mala señal de convergencia para
 los modelos de difusión— se convertirá en una decisión de diseño
 en el experimento principal
 (\Cref{subsec:pet-config}).
+
+La \Cref{fig:mariposas-curvas} recoge estas dos magnitudes a lo
+largo del entrenamiento. A la izquierda, la pérdida MSE cae con
+rapidez en las primeras épocas y se estabiliza después en una
+meseta prácticamente plana, ilustrando el fenómeno descrito. A la
+derecha, la tasa de aprendizaje muestra el perfil del planificador
+cosenoidal con calentamiento de la \Cref{sec:mariposas-config}: una
+rampa lineal inicial hasta $\eta = 10^{-4}$ seguida del decaimiento
+cosenoidal hasta aproximarse a 0 al final del entrenamiento.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.48\linewidth]{img/loss_butterfly_256.png}\hfill
+    \includegraphics[width=0.48\linewidth]{img/lr_butterfly_256.png}
+    \caption{Curvas de entrenamiento del modelo a resolución
+    $256 \times 256$. Izquierda: pérdida MSE por época, que decrece
+    abruptamente al inicio y luego se estabiliza. Derecha: evolución
+    de la tasa de aprendizaje bajo el planificador cosenoidal con 500
+    pasos de calentamiento (rampa lineal seguida de decaimiento
+    cosenoidal).}
+    \label{fig:mariposas-curvas}
+\end{figure}
 
 Para ilustrar este fenómeno comparamos las muestras generadas por
 el modelo en dos momentos opuestos del entrenamiento: las primeras

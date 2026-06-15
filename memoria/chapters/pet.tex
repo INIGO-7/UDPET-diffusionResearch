@@ -19,8 +19,7 @@ conjunto de test, añadiendo además dos líneas base discriminativas
 que delimitan la aportación real del paradigma de difusión. El diseño
 persigue dos objetivos: ser \emph{defendible científicamente} —cada
 decisión está justificada por la literatura o por los fundamentos
-teóricos del \Cref{cap:marco-teorico}— y \emph{ejecutable con el
-presupuesto disponible}.
+teóricos del \Cref{cap:marco-teorico}—.
 
 El capítulo sigue el ciclo de vida natural del sistema: análisis del
 conjunto de datos (\Cref{sec:pet-datos}), preprocesamiento y formato
@@ -58,20 +57,12 @@ características:
     \item Cada volumen tiene forma $(440, 440, 644)$ —cortes axiales
     de $440 \times 440$ apilados a lo largo del eje craneocaudal—
     con vóxeles isotrópicos de $1{,}65$~mm.
-    \item Las matrices afines coinciden exactamente entre los
-    volúmenes pareados, lo cual confirma que la reducción de dosis se
-    aplica sobre el mismo \textit{grid} espacial sin re-muestreo
-    intermedio: los pares están perfectamente registrados a nivel de
-    vóxel.
     \item Se asume que cada fichero corresponde a un paciente
-    independiente; el patrón de los \textit{timestamps} en los
-    nombres es consistente con un proceso de reconstrucción por lotes
-    en el operador, no con \textit{frames} dinámicos de un mismo
-    paciente.
+    independiente.
 \end{itemize}
 
 Las estadísticas de intensidad relevantes para el diseño del
-preprocesamiento, calculadas sobre 5 volúmenes de referencia son:
+preprocesamiento, calculadas sobre los volúmenes del dataset son:
 
 \begin{itemize}[leftmargin=*]
     \item La distribución de intensidades en \textit{foreground}
@@ -83,10 +74,6 @@ preprocesamiento, calculadas sobre 5 volúmenes de referencia son:
     \item Aproximadamente el 18\,\% de los vóxeles del volumen son
     \textit{foreground} (valor estrictamente positivo); el resto es
     fondo exactamente nulo, fuera del cuerpo del paciente.
-    \item En la región de \textit{foreground}, la transformación
-    $\log(1+x)$ aproxima una distribución $\mathcal{N}(4{,}7,\,
-    2{,}6)$, lo cual sugiere que una compresión logarítmica produce
-    un rango bien centrado para el modelo.
     \item La desviación típica del residuo \texttt{low\,-\,full}
     restringido al \textit{foreground} es del orden del 31\,\% de la
     media de señal, lo cual cuantifica el nivel de degradación
@@ -116,14 +103,9 @@ Para cada volumen se calcula una \textit{bounding box} única a
 partir del \textit{foreground} de la versión de \textbf{dosis
 baja}, y se aplica idéntica al volumen pareado de dosis completa,
 garantizando que ambos comparten exactamente el mismo recorte.
-Derivar el recorte de la dosis baja —y no de la completa— evita
-cualquier fuga de información del objetivo hacia la entrada: la
-\textit{bounding box}, la escala de normalización $M$ y el filtrado
-de \textit{slices} se calculan todos a partir de la observación de
-dosis baja, la única señal disponible en inferencia para un
-volumen no visto. Cada \textit{slice} axial recortado se
-redimensiona a $256 \times 256$ píxeles mediante interpolación
-bilineal.
+La escala de normalización $M$ y el filtrado de \textit{slices} se calculan todos a partir de la observación de
+dosis baja, la única señal disponible en inferencia para un volumen no visto. Cada \textit{slice} axial recortado se
+redimensiona a $256 \times 256$ píxeles mediante interpolación bilineal.
 
 La resolución de trabajo $256^2$ es menor que la nativa
 ($440 \times 440$). No es posible entrenar directamente sobre
@@ -138,7 +120,7 @@ lado de la imagen, y ya resulta elevado a $256^2$. La elección de
 $256^2$ equilibra fidelidad anatómica y coste computacional dentro
 del alcance del proyecto.
 
-\paragraph{Normalización per-volumen estabilizadora de varianza.}
+\paragraph{Normalización por-volumen estabilizadora de varianza.}
 Las cuentas se mapean al rango $[-1, 1]$ mediante la
 transformación
 \begin{equation}
@@ -163,6 +145,29 @@ con estructura aproximadamente Poisson: se comporta linealmente
 cerca de cero y logarítmicamente para valores grandes, sin la
 patología de $\log(0)$. Los parámetros $(M, k)$ se almacenan por
 volumen para invertir la transformación durante la evaluación.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.92\linewidth]{img/asinh_normalization.pdf}
+    \caption{Distribución de cuentas: la cola pesada del PET de dosis
+    baja se comprime a una banda acotada. Normalización per-volumen
+    estabilizadora de varianza (\Cref{eq:asinh-norm}) aplicada con los
+    parámetros reales de un volumen del conjunto ($M = 11\,827$
+    cuentas, percentil 99,5; $k = 10$). La curva central traza el
+    mapeo $x \mapsto x'$: el origen $x=0$ se envía a $-1$ y el
+    percentil de referencia $x=M$ cae exactamente en $+1$; el recuadro
+    ampliado muestra el régimen casi lineal cerca del origen y el codo
+    suave en $x=k$, donde la transformación pasa al régimen
+    logarítmico. El histograma superior es la distribución real de
+    cuentas del \textit{foreground} —fuertemente asimétrica y de cola
+    pesada, concentrada cerca de cero—; el histograma lateral es esa
+    misma distribución tras la transformación, ahora repartida de
+    forma estable a lo largo de la banda acotada $[-1, +1]$ sobre la
+    que está ajustado el proceso de difusión. El $0,5\%$ de vóxeles más
+    brillantes sobresale ligeramente por encima de $+1$ sin
+    \textit{clipping}, lo que mantiene exacta la inversión.}
+    \label{fig:asinh-norm}
+\end{figure}
 
 \paragraph{Elección del percentil de referencia.}
 La elección de $M$ como percentil 99,5 —y no como el máximo

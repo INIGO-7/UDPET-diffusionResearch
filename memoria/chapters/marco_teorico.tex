@@ -552,141 +552,145 @@ difusión, y su comparación empírica sobre PET real es el objeto del
 difusión}
 \label{sec:estado-del-arte}
 
-Establecido el aparato conceptual y formal, esta sección recorre las
-contribuciones más relevantes aplicadas al problema de la
-reconstrucción de PET de dosis baja. La presentación es
-\emph{cronológica}, de las propuestas más antiguas a las más
-recientes, con la intención de mostrar cómo ha evolucionado el campo
-y qué aporta cada trabajo respecto a los anteriores.
+Establecido el aparato conceptual y formal, esta sección revisa la
+literatura sobre la que se apoya \emph{directamente} este trabajo. En
+lugar de un inventario exhaustivo, se eligen \textbf{tres trabajos de
+referencia} —los que se han analizado en mayor profundidad— porque,
+entre los tres, contienen las dos ideas que vertebran los
+\textit{pipelines} del \Cref{cap:pet}: el \emph{condicionamiento
+supervisado por concatenación de canal} y el \emph{guiado posterior}
+en inferencia (\Cref{subsec:difusion-condicional}). A continuación se
+mencionan, de forma deliberadamente más breve, dos contribuciones muy
+recientes que señalan hacia dónde se mueve la frontera del campo, pero
+que quedan fuera del alcance de esta memoria.
 
-\paragraph{Octubre 2023 — DDPM como modelo de prior para
-\textit{denoising} de PET~\cite{ddpmpet2023}.} La primera de las
-contribuciones que se reseñan plantea, de manera todavía
-exploratoria, la pregunta que vertebrará buena parte del campo
-durante los años siguientes: ¿pueden los \emph{Denoising Diffusion
-Probabilistic Models}, recién popularizados por el trabajo de Ho
-et al.~\cite{ho2020ddpm}, utilizarse como modelo de aprendizaje
-de la distribución de imágenes PET de buena calidad y, a partir
-de ahí, reducir el ruido de escaneos degradados? El estudio
-entrena un DDPM como modelo de distribución sobre escaneos PET y
-compara varias estrategias derivadas para la tarea de
-\textit{denoising}. El interés de este trabajo no es tanto el de
-una propuesta cerrada cuanto el de una \emph{prueba de concepto}
-que abre la puerta a las líneas posteriores: introduce los
-ingredientes —un DDPM como prior aprendido, una forma de
-condicionar o guiar el muestreo hacia consistencia con la
-observación— sobre los que se construirán las propuestas
-sofisticadas que siguen.
+\subsection{Tres trabajos de referencia}
+\label{subsec:soa-referencia}
 
-\paragraph{Enero 2024 — Score-based generative models aplicados a
-PET~\cite{scorepet2024}.} Esta contribución traslada al dominio
-del PET el marco de los \emph{score-based generative models},
-formalizado por Song et al.~\cite{song2021sde} como una
-unificación de los DDPM con la dinámica de Langevin sobre el
-score. La reformulación tiene dos consecuencias prácticas
-relevantes. La primera es \emph{teórica}: al expresar el proceso
-de difusión como una ecuación diferencial estocástica continua,
-se dispone de toda la maquinaria del cálculo estocástico —incluida
-la ecuación inversa de Anderson— para razonar sobre cómo inyectar
-la consistencia con la medición en el muestreo. La segunda es
-\emph{operativa}: la flexibilidad para elegir muestreadores y para
-incorporar términos de guiado permite atacar directamente el
-problema inverso de la reconstrucción sin recurrir a un
-entrenamiento condicional supervisado. Es, por tanto, el primer
-trabajo que sitúa el guiado posterior como una alternativa
-defendible al condicionamiento supervisado en PET.
+\paragraph{Gong et al. (2022): DDPM para \textit{denoising} de
+PET~\cite{ddpmpet2023}.} Es el primer estudio que evalúa con detalle
+los modelos de difusión sobre PET, y resulta clave para este TFM
+porque, ya en 2022, plantea \emph{las dos maneras} de inyectar la
+información de la observación en un DDPM. La primera suministra la
+imagen ruidosa de baja dosis —y, si existe, un \textit{prior}
+anatómico de resonancia— como \textbf{canales adicionales de entrada}
+de la red de \textit{denoising},
+$\boldsymbol{\varepsilon}_\theta(\mathbf{x}_t, t,
+\mathbf{x}_{\text{noisy}}, \mathbf{x}_{\text{prior}})$, y exige pares
+de entrenamiento de baja y alta calidad. La segunda alimenta solo el
+\textit{prior} a la red e introduce la imagen de baja dosis
+\emph{únicamente en inferencia}, como un término de
+\textbf{consistencia con la medición} dentro de cada paso de muestreo,
+lo que permite atacar distintos niveles de ruido sin reentrenar. El
+trabajo muestra además que repetir el muestreo inverso permite estimar
+\emph{mapas de incertidumbre}. Su interés para nosotros es directo:
+contiene, en forma embrionaria, exactamente los dos paradigmas que
+esta memoria compara: el condicionamiento por canal y el guiado por
+medición.
 
-\paragraph{Junio 2024 — DDPEM: integración del proceso EM con
-DDPM~\cite{ddpem2024}.} Esta propuesta, denominada DDPEM, plantea
-una hibridación interesante entre el proceso clásico de
-reconstrucción \emph{Expectation Maximization} —el algoritmo de
-referencia para la reconstrucción analítica de PET— y el muestreo
-inverso de un DDPM. La motivación es físicamente coherente: la
-operación de adquisición del PET admite una formulación
-probabilística para la que EM proporciona un algoritmo de máxima
-verosimilitud bien fundamentado, y combinarla con un prior
-generativo aprendido por un DDPM permite incorporar conocimiento
-sobre la estructura de las imágenes plausibles que el algoritmo
-EM, por sí solo, no posee. El resultado es un esquema que
-explícitamente reconoce el modelo físico del PET en lugar de
-tratar la observación como una imagen genérica degradada. Esta
-línea representa el extremo más \emph{model-based} del espectro
-de soluciones basadas en difusión.
+\paragraph{Xie et al. (2023): DDPET-3D, difusión \textit{dose-aware}
+para PET 3D~\cite{ddpet3d}.} Lleva el condicionamiento supervisado a
+escala clínica, sobre PET real de dosis ultrabaja. Su mecanismo es la
+\textbf{concatenación de canal}: la imagen de baja dosis
+$\mathbf{x}_{\text{noisy}}$ se apila junto a $\mathbf{x}_t$ como entrada
+de la red, que aprende así directamente
+$p(\mathbf{x}\mid\mathbf{x}_{\text{noisy}})$. De aquí desciende el
+mecanismo de nuestro \textit{pipeline} supervisado: nuestra
+implementación es más sencilla —2D y con un único canal de baja
+dosis—, pero el condicionamiento es idéntico.
 
-\paragraph{Junio 2024 — Revisión BJR\,AI: la difusión no supervisada
-como estado del arte~\cite{bjrai2024}.} Apenas unas semanas
-después, la revista \emph{British Journal of Radiology, Artificial
-Intelligence} publica una revisión exhaustiva sobre el uso de
-algoritmos de reconstrucción basados en modelos generativos
-profundos para imagen médica que tiene un valor particular por dos
-motivos. En primer lugar, \emph{establece} —tras una comparación
-sistemática de la literatura disponible— que los algoritmos que
-incorporan modelos de difusión \emph{no supervisados} constituyen
-el estado del arte en tres tareas clave de imagen médica: la
-resonancia magnética ultrarrápida, la TAC \textit{super-sparse-view}
-y, de forma directamente relevante para este trabajo, el PET de
-dosis baja. En segundo lugar, ofrece una introducción didáctica
-muy cuidada tanto al planteamiento general de los problemas
-inversos en imagen como a la maquinaria de los modelos de difusión,
-acompañada de una discusión metodológica sobre los retos
-específicos de cada modalidad (formulación del operador directo,
-ruido característico, métricas adecuadas) y de un catálogo de los
-campos de investigación abiertos. Más que una propuesta
-metodológica, este trabajo funciona como \emph{punto de anclaje}
-del estado del arte y como justificación para apostar por la línea
-del prior no condicional con guiado de medición, que es uno de los
-dos \textit{pipelines} desarrollados en esta memoria.
+\paragraph{Singh, Denker et al. (2024): \textit{score-based
+generative models} para reconstrucción de PET~\cite{scorepet2024}.} Es
+el referente del segundo paradigma. Formula la reconstrucción de PET
+en el marco continuo de las \emph{ecuaciones diferenciales
+estocásticas} y los modelos basados en \textit{score}
+(\Cref{subsec:score-matching}): entrena un \textbf{prior no
+condicional} sobre PET cerebral y condiciona \emph{solo en inferencia}
+descomponiendo el score posterior en un término de \textit{prior} —la
+red— más un término de verosimilitud —la medición—, al estilo de DPS
+(\Cref{eq:posterior-score}). Su mérito está en adaptar ese guiado a
+las particularidades del PET —ruido de Poisson de baja estadística y
+rango dinámico amplio—, sustituyendo el término de fidelidad gaussiano
+por una actualización de máxima verosimilitud sobre subconjuntos
+ordenados de la medición, al modo de los algoritmos clásicos tipo
+OSEM/BSREM. Este trabajo es la formalización rigurosa del guiado posterior que sostiene nuestro
+\textit{pipeline} no condicional con DPS, y evidencia su gran ventaja:
+un mismo \textit{prior} sirve para distintos niveles de ruido y
+operadores sin reentrenar (\Cref{fig:soa-singh}).
 
-\paragraph{Junio 2025 — MAMBA para reconstrucción con
-incertidumbre~\cite{mamba2025}.} Una vez asentada la difusión como
-referencia para el dominio, la innovación se desplaza hacia la
-\emph{arquitectura} de la red de \textit{denoising}. Este trabajo
-sustituye la arquitectura tradicional de tipo U-Net o
-\textit{transformer} por un modelo basado en el paradigma
-\texttt{MAMBA}, una familia de modelos de espacio de estados que
-combina eficiencia computacional —complejidad lineal en la
-secuencia— con la capacidad de modelar dependencias de largo
-alcance, particularmente atractiva para datos volumétricos en los
-que la atención completa resulta prohibitiva. Además de proponer
-una mejora arquitectónica, el trabajo incorpora una modelización
-explícita de la \emph{incertidumbre} de la reconstrucción, un
-ingrediente clínicamente relevante que tiende a estar ausente en
-las propuestas anteriores. El estudio reclama el estado del arte
-para PET de dosis baja, así como para resonancia magnética rápida
-y TAC \textit{sparse-view}.
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=\linewidth]{img/SBGM_paper_reconstruccion_convssinguiado.png}
+    \caption{Efecto del guiado posterior en Singh, Denker et
+    al.~\cite{scorepet2024}. De izquierda a derecha: imagen de
+    referencia (\textit{ground truth}); reconstrucción con el
+    \textit{prior} de difusión \emph{sin} término de consistencia con
+    la medición (PET-DDS), que produce una imagen plausible pero
+    cuantitativamente débil (PSNR $19{,}35$\,dB; SSIM $0{,}729$); y
+    dos reconstrucciones \emph{con} guiado posterior por la medición para dos
+    escalas de guiado ($\omega = 0{,}25$ y $\omega = 0{,}5$), que
+    recuperan la fidelidad a la observación (PSNR $\approx 30$\,dB;
+    SSIM $> 0{,}95$). A la derecha, tenemos la imagen de resonancia empleada
+    como guiado anatómico opcional. }
+    \label{fig:soa-singh}
+\end{figure}
 
-\paragraph{Diciembre 2025 — Task-Adaptive Transformer
-(TAT)~\cite{tat2025}.} La contribución más reciente que se reseña
-da otro giro arquitectónico: propone un \emph{Task-Adaptive
-Transformer}, un único modelo que comparte representación entre
-tareas de restauración heterogéneas y se especializa
-dinámicamente en función de la tarea —síntesis de PET, reducción
-de ruido en TAC, super-resolución en resonancia magnética—. La
-filosofía es la de los \emph{modelos generalistas} de imagen
-médica, un movimiento paralelo al de los grandes modelos
-fundacionales en otros dominios. El estudio reclama el estado del
-arte en las tres tareas que aborda. Para los propósitos de este
-trabajo, su interés es relativo: aporta un techo competitivo de
-referencia, pero queda fuera del alcance —y del presupuesto de
-cómputo— de un TFM tratar de reproducir o superar un modelo
-generalista de este tipo.
+\subsection{Frontera reciente: más allá de la difusión}
+\label{subsec:soa-frontera}
 
-\paragraph{Lectura conjunta.} Vistas las contribuciones en orden
-cronológico, el campo dibuja una trayectoria nítida: arranca en
-2023 con DDPM básicos aplicados a PET~\cite{ddpmpet2023}, se
-formaliza en 2024 mediante el marco de los \emph{score-based
-generative models}~\cite{scorepet2024} y la hibridación con el
-modelo físico del PET~\cite{ddpem2024}, se consolida ese mismo año
-con una revisión que lo sitúa explícitamente como estado del
-arte~\cite{bjrai2024}, y en 2025 se diversifica en dos direcciones
-arquitectónicas —modelos de espacio de estados con cuantificación
-de incertidumbre~\cite{mamba2025} y \textit{transformers}
-generalistas multitarea~\cite{tat2025}— que comparten el sustrato
-de difusión pero exploran maneras distintas de aprovecharlo. Esta
-trayectoria justifica el diseño que se desarrolla en el
-\Cref{cap:pet}: la elección de comparar un \textit{pipeline}
-supervisado condicional —la formulación canónica más directa— con
-un \textit{pipeline} de prior no condicional con guiado por
-medición —la línea identificada como estado del arte por la
-revisión BJR\,AI— es exactamente la decisión que el panorama
-descrito sugiere.
+Una vez asentada la difusión como referencia, las contribuciones más
+punteras desplazan la innovación desde la \emph{receta generativa}
+hacia la \emph{arquitectura} de la red. Identificamos dos enfoques que marcan el techo competitivo actual, 
+pero reproducirlos excede el alcance del trabajo y el presupuesto de cómputo.
+
+\paragraph{MambaMIR (2025): espacios de estados con
+incertidumbre~\cite{mamba2025}.} Sustituye la red convolucional o
+\textit{transformer} por un modelo \texttt{MAMBA} —espacios de estados
+con complejidad lineal en la secuencia y sensibilidad global—,
+especialmente atractivo para datos de alta resolución. Incorpora una
+estimación de \emph{incertidumbre} mediante un enmascarado aleatorio
+de escaneo —alternativa al \textit{dropout} de Monte Carlo— y reclama
+el estado del arte conjunto en PET de dosis baja, resonancia rápida y
+TAC \textit{sparse-view}.
+
+\paragraph{TAT (2025): \textit{Task-Adaptive Transformer}
+multitarea~\cite{tat2025}.} Propone un único \textit{transformer}
+todo el uno que resuelve a la vez síntesis de PET, reducción de
+ruido en TAC y super-resolución en resonancia, generando pesos
+específicos por tarea y reequilibrando dinámicamente la pérdida para
+evitar interferencias y desbalanceos entre tareas. Encarna la
+filosofía de los \emph{modelos generalistas} de imagen médica y
+reclama el estado del arte en las tres tareas que aborda
+(\Cref{fig:soa-tat}).
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=\linewidth]{img/TAT_paper_estructura.png}
+    \caption{Arquitectura del \textit{Task-Adaptive Transformer}
+    (TAT)~\cite{tat2025}. Sobre una estructura en U de bloques
+    \textit{transformer}, una red de extracción de representación de
+    tarea (TREN) genera, a partir de la entrada, los pesos de los
+    bloques adaptativos (WATB), de modo que la red se especializa
+    dinámicamente según la tarea —síntesis de PET, reducción de ruido
+    en TAC o super-resolución en resonancia—. La visualización t-SNE
+    (centro) muestra cómo las representaciones de tarea quedan
+    separadas, lo que permite a un único modelo evitar la interferencia
+    entre tareas.}
+    \label{fig:soa-tat}
+\end{figure}
+
+\paragraph{Lectura conjunta.} Los tres trabajos de referencia dibujan
+una trayectoria nítida y, sobre todo, \emph{dos caminos}. Gong et
+al.~\cite{ddpmpet2023} siembra ambos sobre \textit{denoising}
+cerebral; DDPET-3D~\cite{ddpet3d} madura la vía del
+\textbf{condicionamiento supervisado por canal} a escala clínica 3D; y
+Singh et al.~\cite{scorepet2024} madura la vía del \textbf{guiado
+posterior} con un formalismo riguroso de \textit{score}/SDE. Esos dos
+caminos son exactamente los dos \textit{pipelines} que el
+\Cref{cap:pet} construye y compara sobre PET real. La frontera más
+reciente —\textit{backbones} de espacio de estados~\cite{mamba2025} y
+\textit{transformers} generalistas~\cite{tat2025}— diversifica la
+arquitectura de la red, pero deja abierta, y en buena medida
+ortogonal, la pregunta que este trabajo estudia: cuál de los dos modos
+de inyectar la medición rinde mejor para la reconstrucción de PET de
+dosis baja.
