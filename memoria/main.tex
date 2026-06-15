@@ -24,7 +24,24 @@
 
 % --- Referencias cruzadas e hipervínculos ---
 \usepackage[hidelinks]{hyperref}
-\usepackage{cleveref}
+\usepackage[spanish]{cleveref}
+
+% Nombres en español para las referencias de cleveref (singular/plural).
+% \Cref... usa la forma con mayúscula inicial; \cref... la minúscula.
+\crefname{equation}{ecuación}{ecuaciones}
+\Crefname{equation}{Ecuación}{Ecuaciones}
+\crefname{figure}{figura}{figuras}
+\Crefname{figure}{Figura}{Figuras}
+\crefname{table}{tabla}{tablas}
+\Crefname{table}{Tabla}{Tablas}
+\crefname{chapter}{capítulo}{capítulos}
+\Crefname{chapter}{Capítulo}{Capítulos}
+\crefname{section}{sección}{secciones}
+\Crefname{section}{Sección}{Secciones}
+\crefname{subsection}{sección}{secciones}
+\Crefname{subsection}{Sección}{Secciones}
+\crefname{algorithm}{algoritmo}{algoritmos}
+\Crefname{algorithm}{Algoritmo}{Algoritmos}
 
 % --- Algoritmos ---
 \usepackage{algorithm}
@@ -35,6 +52,17 @@
 
 % --- Macros útiles ---
 \newcommand{\todo}[1]{\textcolor{red}{\textbf{[TODO: #1]}}}
+
+% Marcador temporal para figuras pendientes de insertar. Compila como un
+% recuadro con la descripción de la imagen prevista. Para sustituirlo por
+% la figura real basta con cambiar \imgplaceholder{...} por
+% \includegraphics[width=...]{img/papers/...}.
+\newcommand{\imgplaceholder}[2][0.8\linewidth]{%
+  {\setlength{\fboxsep}{0pt}%
+  \fbox{\parbox[c][3.2cm][c]{#1}{%
+    \centering\color{red}\textbf{[Figura pendiente]}\\[4pt]%
+    \normalcolor\small\itshape #2\par}}}%
+}
 
 \begin{document}
 
@@ -64,7 +92,8 @@ reconstrucción y síntesis de datos}\\[1.5em]
 
 \noindent\rule{13.5cm}{0.4pt}\vspace{2em}
 
-{Tutor: Ignacio Villanueva Díez}\\[3em]
+{Tutor: Ignacio Villanueva Díez}\\
+{Co-tutor: Joaquín López Herraiz}\\[3em]
 {Madrid, a junio de 2026}
 
 \end{center}
