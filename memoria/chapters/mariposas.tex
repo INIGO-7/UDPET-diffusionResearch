@@ -119,8 +119,7 @@ estructural.
     El ejemplo corresponde a la tarea de segmentación para la que se
     concibió (salida de dos canales de clase); las U-Net de difusión
     conservan esta topología en «U» pero añaden \textit{embeddings} de
-    paso temporal y bloques de atención, y producen una salida de la
-    misma naturaleza que la entrada.}
+    paso temporal y bloques de atención.}
     \label{fig:unet}
 \end{figure}
 
@@ -153,16 +152,13 @@ residuales.
     \includegraphics[width=0.55\linewidth]{img/bloque_residual.png}
     \caption{Esquema del principio residual: la rama principal aplica
     una secuencia de operaciones a la entrada y su salida se
-    \emph{suma} a la propia entrada a través de la conexión de salto
-    interna (\textit{skip}), produciendo $F(\mathbf{x}) + \mathbf{x}$.
-    La figura ilustra el concepto general en su formulación original
-    (convoluciones con \textit{batch normalization} y ReLU); en
-    nuestra U-Net de difusión cada bloque emplea \textit{group
-    normalization} y activaciones SiLU en lugar de \textit{batch
-    normalization} y ReLU, e inyecta además el \textit{embedding} del
-    paso temporal $t$ (sumándolo a los mapas de características entre
-    sus dos convoluciones), de manera que el comportamiento del bloque
-    queda condicionado al nivel de ruido.}
+    \emph{suma} a esta a través de la conexión de salto interna
+    (\textit{skip}), produciendo $F(\mathbf{x}) + \mathbf{x}$. La
+    figura muestra la formulación original (convoluciones con
+    \textit{batch normalization} y ReLU); nuestra U-Net de difusión
+    las sustituye por \textit{group normalization} y SiLU, e inyecta
+    además el \textit{embedding} del paso temporal $t$ entre las dos
+    convoluciones, condicionando el bloque al nivel de ruido.}
     \label{fig:bloque-residual}
 \end{figure}
 
@@ -194,10 +190,7 @@ la suma ponderada de los valores según ese mapa.
     $g(\mathbf{x})$ y valor $h(\mathbf{x})$; el producto consulta--clave
     seguido de \textit{softmax} genera el mapa de atención, que pondera
     los valores para producir los mapas de características
-    autoatendidos. El coste de calcular el mapa de atención crece de
-    forma \emph{cuadrática} con el número de posiciones espaciales
-    $N = H \times W$, lo que obliga a reservar estos bloques para los
-    niveles de menor resolución.}
+    autoatendidos.}
     \label{fig:autoatencion}
 \end{figure}
 
