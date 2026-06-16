@@ -148,7 +148,22 @@ contraparte de alta calidad, y que no presentan \emph{banding} ni artefactos ext
 reconstruídos con los otros modelos presentan un alto nivel de banding y artefactos, lo cuál los inutiliza
 en la práctica a la hora de reconstruir estos volúmenes con mediciones parciales.
 
-... (incluir fotos de NIfTI reconstruído)
+\begin{figure}[h!]
+    \centering
+    \begin{minipage}[c]{0.42\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{img/pet_reconstruction/reconstructed_vol_w_supervised.png}
+    \end{minipage}\hfill
+    \begin{minipage}[c]{0.54\linewidth}
+        \caption{Volumen NIfTI reconstruido con el modelo de difusión
+        supervisada a partir de su versión de baja dosis ($1/20$), mostrando
+        una comparación en distintos planos de la imagen con dosis baja, la reconstrucción, y la dosis completa: 
+        la reconstrucción es fiel a la contraparte de alta dosis, preservando la estructura
+        anatómica y sin presentar \emph{banding} ni artefactos extraños que
+        sí aparecen en los modelos de menor rendimiento.}
+        \label{fig:reconstructed-vol-supervised}
+    \end{minipage}
+\end{figure}
 
 Finalmente, este trabajo me ha ayudado a conocer más de cerca el dominio de la reconstrucción de imágenes médicas, 
 dándome la oportunidad de revisar literatura del estado del arte en las modalidades de reconstrucción de PET, 
