@@ -38,29 +38,6 @@ ejecución de experimentos, y la implementación de los distintos modelos en Pyt
 ---en particular los modelos de difusión--- como a afianzar y aplicar en la práctica los fundamentos de
 matemática y estadística adquiridos durante el máster.
 
-\section{Resultados principales}
-\label{sec:resultados}
-
-\todo{Sintetizar los resultados cuantitativos (PSNR, SSIM,
-NRMSE, preservación de intensidad) y cualitativos (figuras
-4-panel) obtenidos por ambos \textit{pipelines}, y discutir la
-comparación entre el enfoque supervisado y el prior no
-condicional con guiado.}
-
-También, surge una pregunta que plantea si de verdad merece la pena invertir el tiempo, recursos y 
-complejidad que 
-
-Asimismo, se ha observado que con los dos modelos que ofrecen mejor rendimiento ---el modelo de difusión 
-supervisada y la U-net--- se pueden reconstruir volúmenes NIfTI de baja calidad que son fieles a su 
-contraparte de alta calidad, y que no presentan \emph{banding} ni artefactos extraños. En cambio, volúmenes
-reconstruídos con los otros modelos presentan un alto nivel de banding y artefactos, lo cuál los inutiliza
-en la práctica a la hora de reconstruir estos volúmenes con mediciones parciales.
-
-... (incluir fotos de NIfTI reconstruído)
-
-\todo{Mostrar los volúmenes NIfTI reconstruídos completamente
-por el pipeline de difusión, y compararlos con los volúmenes 3d originales}
-
 \section{Limitaciones}
 \label{sec:limitaciones}
 
@@ -70,26 +47,21 @@ la amplitud del espacio de experimentos posibles. Este espacio
 abarca desde los parámetros del paradigma de entrenamiento
 (tamaño de imagen, tasa de aprendizaje, estabilización numérica),
 pasando por las decisiones de tratamiento de las imágenes médicas
-(normalización, recorte, filtrado de \textit{slices}), hasta las
+(normalización, recorte a \emph{foreground}), hasta las
 elecciones de arquitectura (DDIM frente a DDPM, U-Net con
 atención, guiado DPS, imitación explícita del ruido de dosis
-baja, etc.). Combinado con los límites de hardware, que solo
+baja, etc.). Combinado con los límites de hardware y de presupuesto, que solo
 permiten realizar un número acotado de experimentos, esto ha sido
-el mayor reto del trabajo. Se ha mitigado mediante una revisión
-del estado del arte exhaustiva, de la que se han extraído las
-ideas más prometedoras de la literatura reciente del dominio; sin
-ella habría sido muy difícil llegar a tiempo, pues habría hecho
-falta una experimentación mucho mayor para determinar qué funciona,
-qué no, y dónde se rompe la arquitectura.
+el mayor reto del trabajo. 
 
 Una segunda limitación es el tiempo de reconstrucción de un
 volumen NIfTI en inferencia. Tras entrenar el modelo supervisado
 hasta el final (100 épocas) y reconstruir volúmenes localmente en
 un MacBook Pro M4 Pro de 24~GB con un \textit{batch} de inferencia
 de 8, el tiempo de reconstrucción de un volumen completo es de
-aproximadamente una hora. Esto dificulta integrar el sistema
-directamente en una máquina de escaneo, tanto por los
-requerimientos computacionales como por el tiempo de procesado.
+aproximadamente una hora y media. Idealmente, este sistema se integraría 
+directamente en una máquina de escaneo PET, lo cuál se ve dificultado por los
+requerimientos computacionales tanto como por el tiempo de procesado.
 De cara a un entorno clínico real, una arquitectura factible sería
 adquirir el escaneo de dosis baja en la propia máquina y enviar
 los volúmenes en lotes a la nube, donde se procesarían de forma
@@ -101,7 +73,7 @@ vigésima parte de la dosis.
 \section{Líneas de desarrollo futuro}
 \label{sec:lineas-futuras}
 
-Se identifican seis extensiones, ordenadas por proximidad a la
+Se identifican cinco extensiones prácticamente inmediatas, ordenadas por proximidad a la
 implementación actual.
 
 \begin{enumerate}[leftmargin=*]
@@ -112,9 +84,9 @@ implementación actual.
     (\Cref{sec:pet-preprocesado}). Al preservar más detalle
     espacial cabe esperar un modelo más preciso, cuyas
     reconstrucciones se acerquen más a la referencia de dosis
-    completa, a costa de un mayor consumo de memoria y cómputo por
-    \textit{slice}. Es la extensión más inmediata, pues se reduce
-    a un cambio de la resolución objetivo en la configuración.
+    completa, a costa de un mayor requisito de rendimiento. 
+    Es la extensión más inmediata, pues se reduce a un cambio de 
+    la resolución objetivo en la configuración.
 
     \item \textbf{Refinamiento de las líneas base U-Net y RED-CNN.}
     Alterar la arquitectura de los dos modelos discriminativos de
@@ -122,18 +94,9 @@ implementación actual.
     entrenamiento por una pérdida más rica que combine varias
     métricas complementarias (p.\,ej.\ una mezcla ponderada de MAE,
     MSE y un término estructural tipo SSIM), en lugar de un único
-    error puntual. Dado que estas líneas base ya resultan
-    ligeramente superiores a los \textit{pipelines} de difusión, un
-    objetivo multi-métrica podría ampliar esa ventaja y precisar
-    mejor el techo alcanzable por los métodos discriminativos.
-
-    \item \textbf{DPS con $\sigma(\mathbf{y})$ dependiente de la
-    intensidad.} Modelar la estadística de Poisson del ruido PET
-    propagada a través de la normalización $\operatorname{arcsinh}$
-    y sustituir la verosimilitud isotrópica del Pipeline~B por
-    una verosimilitud heteroscedástica. Es la extensión natural
-    más cercana al planteamiento sobre el ruido descrito en la
-    \Cref{sec:pet-ruido}.
+    error puntual. Se identifica primero esta línea ya que estos
+    modelos son más sencillos de modificar y entrenar que los pipelines de 
+    difusión, dando igualmente resultados competitivos.
 
     \item \textbf{Replanteamiento del \textit{pipeline} no
     condicional mediante modelado explícito del ruido del
@@ -142,26 +105,49 @@ implementación actual.
     \textit{schedule} no captura la naturaleza del ruido PET. Se
     propone abandonar esa estrategia en favor de modelar
     explícitamente el ruido del escáner con técnicas alternativas
-    —desde verosimilitudes ajustadas a la estadística de Poisson
-    hasta procesos directos que imiten la degradación de dosis
-    baja (véase el ítem sobre modelos puente)—, de modo que el
+    ---degradando la imagen de dosis completa con ruido de poisson en vez de
+    ruido gaussiano, acercándose más a la naturaleza del escáner--- de modo que el
     proceso generativo aprenda la transición real entre dosis
-    completa y dosis baja en lugar de una corrupción gaussiana
-    sintética.
+    completa y dosis baja.
 
     \item \textbf{Contexto 2.5D o 3D.} Añadir \textit{slices}
     vecinos como canales adicionales de entrada (2.5D) para
     introducir coherencia inter-\textit{slice}, o pasar a un
     U-Net 3D sobre parches si el hardware se amplía.
 
-    \item \textbf{Métricas clínicas.} En el caso de obtener
-    metadatos de dosis inyectada y peso del paciente, computar
-    SUV reales y reportar preservación de SUV en regiones de
-    interés segmentadas (manualmente o con un modelo auxiliar).
+    \item \textbf{Métricas clínicas.} Revisar las métricas y hacerlas más robustas,
+    computando SUV reales en el caso de obtener los datos por paciente ---peso y dosis inyectada--- 
+    y reportar preservación de SUV en regiones de interés, así como la respuesta de los modelos antes
+    pacientes con lesiones, donde el comportamiento puede resultar impredecible.
 \end{enumerate}
 
 \section{Reflexión final}
 \label{sec:reflexion}
+
+También, surge una pregunta que plantea si de verdad merece la pena invertir el tiempo, recursos y 
+complejidad añadida que los modelos de difusión suponen. Según hemos observado, los resultados en métricas
+como \emph{SSIM} y \emph{PSNR} son máximes en el modelo de difusión supervisado, pero los valores de las
+métricas que operan en el espacio desnormalizado son mejores . La interpretación de esto es que estos modelos
+están muy cercanos en cuánto a métricas se refiere, y dado el coste añadido de un modelo de difusión, es 
+lógico que el modelo ganador resulte la U-net de regresión. Este modelo ya es suficientemente complejo
+como para capturar la estructura de las imágenes PET, y se entrena con un loss \emph{MSE} que intenta
+maximizar la similaridad visual entre imagen reconstruída y real. 
+
+Dicho esto, la U-net se puede mejorar cambiando la resolución 
+
+Para cualquier estudio posterior centrado en reconstrucción de imágenes PET de baja dosis, lo recomendado sería
+empezar con una U-net de regresión, y optimizar ese modelo para llevarlo al máximo de rendimiento antes de
+explorar otras estrategias más complejas como los modelos de difusión, los cuales tienen una alta variedad de
+implementaciones, estructuras y posibilidades en el modelaje del entrenamiento, y es posible que se pueda
+implementar este paradigma encima de la U-net previamente diseñada.
+
+Asimismo, se ha observado que con los dos modelos que ofrecen mejor rendimiento ---el modelo de difusión 
+supervisada y la U-net--- se pueden reconstruir volúmenes NIfTI de baja calidad que son fieles a su 
+contraparte de alta calidad, y que no presentan \emph{banding} ni artefactos extraños. En cambio, volúmenes
+reconstruídos con los otros modelos presentan un alto nivel de banding y artefactos, lo cuál los inutiliza
+en la práctica a la hora de reconstruir estos volúmenes con mediciones parciales.
+
+... (incluir fotos de NIfTI reconstruído)
 
 \todo{Reflexión personal sobre el aprendizaje adquirido durante
 el TFM y su encaje con los contenidos del Máster en Tratamiento
