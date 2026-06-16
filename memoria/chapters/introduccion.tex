@@ -7,60 +7,52 @@
 \section{Contexto}
 \label{sec:contexto}
 
-La calidad de cualquier sistema de adquisición de una señal trabaja siempre bajo el mismo compromiso: aumenta con
-el presupuesto invertido en la medición. Un fotógrafo que dispara de noche puede
-alargar la exposición o subir la sensibilidad del sensor; un
-ingeniero de telecomunicaciones puede aumentar la potencia de
-transmisión o promediar más muestras. En todos los casos la moneda
-de cambio es la misma —tiempo, energía, exposición— y la factura se
-paga en la calidad de los resultados obtenidos.
+La calidad de cualquier sistema de adquisición de una señal trabaja
+siempre bajo el mismo compromiso: aumenta con el presupuesto invertido
+en la medición. Un fotógrafo que dispara de noche alarga la exposición
+o sube la sensibilidad del sensor; en todos los casos la moneda de
+cambio es la misma —tiempo, energía, exposición— y la factura se paga
+en la calidad del resultado.
 
 La tomografía por emisión de positrones (PET, \textit{Positron
-Emission Tomography}) es un caso extremo de este compromiso, porque este presupuesto de adquisición paga 
-en una moneda especialmente cara: radiación inyectada a un paciente, además del tiempo de ese
-paciente inmovilizado dentro de la máquina. El PET es una modalidad
-de imagen \emph{funcional}: mide dónde se concentra un radiotrazador
----típicamente un análogo de la glucosa--- y produce un mapa
-tridimensional de la actividad metabólica del cuerpo. Lo relevante aquí es la estructura del coste:
-la imagen se reconstruye a partir de un \emph{recuento de eventos}
+Emission Tomography}) es un caso extremo de este compromiso, porque su
+presupuesto de adquisición se paga en una moneda especialmente cara:
+radiación inyectada al paciente y tiempo inmovilizado dentro de la
+máquina. La imagen ---un mapa tridimensional de la actividad metabólica
+del cuerpo--- se reconstruye a partir de un \emph{recuento de eventos}
 ---desintegraciones radiactivas detectadas---, y acumular suficientes
-eventos exige una dosis de radiotrazador considerable y entre quince
-y cuarenta y cinco minutos de escaneo. Recortar cualquiera de los
-dos significa, inevitablemente, contar menos eventos, por tanto, reducir la calidad del escaneo.
+eventos exige una dosis de radiotrazador considerable y entre quince y
+cuarenta y cinco minutos de escaneo. Recortar cualquiera de los dos
+significa contar menos eventos y, por tanto, degradar la imagen.
 
-En este trabajo se aborda el escenario de \emph{dosis baja}, donde el escaneo se adquiere con una vigésima parte
-(1/20) de la dosis estándar; en esa banda el ruido es severo, y la imagen pierde una parte sustancial de su 
-valor diagnóstico. Recuperar a partir de esa observación degradada la imagen que se
-habría obtenido con la dosis completa es lo que en matemática aplicada se denomina un \emph{problema inverso}, 
-y es un problema mal planteado: el ruido destruye información que ninguna operación determinista puede 
-restituir. Toda solución pasa por inyectar conocimiento adicional sobre qué aspecto debe tener una imagen PET
-plausible ---un \emph{prior}---, y la calidad de la reconstrucción depende críticamente de la calidad de ese prior.
+En este trabajo se aborda el escenario de \emph{dosis baja}, donde el
+escaneo se adquiere con una vigésima parte (1/20) de la dosis estándar:
+el ruido es severo y la imagen pierde buena parte de su valor
+diagnóstico. Recuperar la imagen de dosis completa a partir de esa
+observación degradada es un \emph{problema inverso} mal planteado ---el
+ruido destruye información que ninguna operación determinista puede
+restituir---, de modo que toda solución pasa por inyectar un
+\emph{prior} sobre qué aspecto tiene una imagen PET plausible, y la
+calidad de la reconstrucción depende críticamente de la calidad de ese
+prior.
 
-Dado esto, en este trabajo se investigan modelos especialmente interesantes en el dominio de la reconstrucción
-de datos: los \textbf{modelos de difusión}. Estos son modelos generativos profundos cuya mecánica de entrenamiento 
-consiste en aprender a quitar ruido: se corrompe una imagen con ruido en pasos sucesivos y se entrena una red neuronal 
-para revertir cada paso. Encadenando esos pasos desde ruido puro, el modelo sintetiza imágenes nuevas de la 
-distribución sobre la que fue entrenado. Aplicado a nuestro problema: un
-modelo de difusión entrenado sobre imágenes PET de dosis completa es, implícitamente, un prior aprendido 
-sobre el espacio de imágenes anatómicamente plausibles, y toda su maquinaria está construida
-alrededor de la pregunta ``dada una imagen ruidosa, ¿qué imagen limpia es compatible con ella?''.
+Aquí entran los \textbf{modelos de difusión}, modelos generativos
+profundos que se entrenan aprendiendo a quitar ruido: se corrompe una
+imagen en pasos sucesivos y una red neuronal aprende a revertir cada
+paso, de forma que, encadenándolos desde ruido puro, el modelo
+sintetiza muestras nuevas de la distribución con la que fue entrenado.
+Un modelo de difusión entrenado sobre PET de dosis completa es,
+implícitamente, un prior aprendido sobre el espacio de imágenes
+anatómicamente plausibles: justo lo que el problema inverso necesita.
 
-Se van a estudiar dos paradigmas de difusión sacados de la literatura reciente sobre el problema de 
-reconstrucción de imágenes PET: 
-\begin{itemize}
-    \item Paradigma \textbf{supervisado}, condiciona la red de \textit{denoising} con el escaneo de dosis baja, de modo que el
-modelo aprende directamente la distribución posterior de la imagen
-limpia dada la observación.
-    \item Paradigma \textbf{no condicional con guiado}, entrena el modelo exclusivamente sobre imágenes de dosis completa 
-y aplica la observación de dosis baja en tiempo de inferencia, desviando cada paso del muestreo hacia la 
-consistencia con la medición.
-\end{itemize}
-
-Este trabajo implementa ambas de extremo a extremo ---preprocesamiento de los volúmenes, entrenamiento en GPU dedicada
-en la nube, inferencia volumétrica y evaluación--- y las compara entre sí y contra dos líneas base
-discriminativas que permiten cuantificar qué aporta el paradigma de difusión. El resultado no es solo una
-comparación de métricas: es también un ejercicio completo de ingeniería de sistemas de aprendizaje profundo, 
-desde el análisis de los datos crudos hasta el coste en dólares de cada experimento.
+Se estudian los dos paradigmas que la literatura reciente plantea para
+este problema ---uno \textbf{supervisado}, que condiciona la red con el
+escaneo de dosis baja, y otro \textbf{no condicional con guiado}, que
+aprende un prior de dosis completa e inyecta la observación en
+inferencia---, detallados junto al resto de objetivos en la
+\Cref{sec:objetivos}. El trabajo los implementa de extremo a extremo y
+los confronta entre sí y contra dos líneas base discriminativas que
+cuantifican qué aporta realmente la difusión.
 
 \section{Motivación e interés del tema}
 \label{sec:motivacion}
@@ -81,37 +73,26 @@ sobre un gran número de individuos sanos. Acortar el tiempo de
 escaneo, por su parte, mejora la experiencia del paciente, reduce
 los artefactos por movimiento involuntario y aumenta el número de
 escaneos diarios que un equipo puede realizar, agilizando así
-las listas de espera. 
+las listas de espera.
 
-En el plano \textbf{metodológico}, los modelos de difusión
-constituyen uno de los paradigmas generativos más activos del momento, y están
-reconfigurando la aproximación a los problemas inversos: en lugar de
-aprender una función directa \textit{entrada-degradada}~$\to$~\textit{salida-limpia}, como hacen
-los modelos discriminativos clásicos, permiten formular la
-reconstrucción como un muestreo posterior bajo un prior generativo. Varios \emph{papers} recientes 
-en imagen médica sitúan a los modelos de difusión como el estado del arte en
+En el plano \textbf{metodológico}, los modelos de difusión son uno de
+los paradigmas generativos más activos del momento, y varios trabajos
+recientes en imagen médica los sitúan como estado del arte en
 reconstrucción de PET de dosis baja, TAC \textit{sparse-view} y
-resonancia magnética ultrarrápida~\cite{bjrai2024}. Estudiar en
-profundidad ambas formulaciones ---la supervisada y la de guiado
-posterior--- y confrontarlas con líneas base discriminativas bien
-establecidas es una apuesta razonable por una línea con recorrido.
+resonancia magnética ultrarrápida~\cite{bjrai2024}. Estudiar a fondo
+sus dos formulaciones ---la supervisada y la de guiado posterior--- y
+confrontarlas con líneas base discriminativas bien establecidas es una
+apuesta razonable por una línea con recorrido.
 
-En el plano \textbf{formativo}, el trabajo encaja directamente con
-los contenidos del Máster en Tratamiento Estadístico-Computacional
-de la Información. Combina fundamentos teóricos de modelos
-generativos profundos —termodinámica del no equilibrio,
-\textit{score-matching}, procesos estocásticos—, un componente
-clásico de \textit{deep learning} aplicado a visión —diseño y
-entrenamiento de redes U-Net sobre datos volumétricos—, una
-vertiente de problemas inversos y matemática aplicada —formulación
-probabilística de la observación, guiado por gradiente del
-\textit{log-posterior}—, y una capa de ingeniería de sistemas
-—contenedores reproducibles, cómputo bajo demanda en la nube,
-gestión de presupuesto—. Trabajar con datos reales del dominio
-sanitario introduce además restricciones operativas —fugas de
-información entre particiones, normalizaciones derivadas únicamente
-de la observación— que no aparecen en los \textit{benchmarks}
-sintéticos habituales.
+En el plano \textbf{formativo}, el trabajo encaja directamente con los
+contenidos del Máster en Tratamiento Estadístico-Computacional de la
+Información: reúne los fundamentos teóricos de los modelos generativos
+profundos, el \textit{deep learning} aplicado a visión, la matemática
+de los problemas inversos y una capa de ingeniería de sistemas en la
+nube. Trabajar con datos sanitarios reales introduce además
+restricciones operativas —fugas de información entre particiones,
+normalizaciones derivadas únicamente de la observación— ausentes en los
+\textit{benchmarks} sintéticos habituales.
 
 \section{Objetivos}
 \label{sec:objetivos}
@@ -119,9 +100,9 @@ sintéticos habituales.
 El objetivo general de este Trabajo Fin de Máster es \textbf{diseñar,
 implementar y evaluar un sistema de reconstrucción de PET de dosis
 baja basado en modelos de difusión, comparando empíricamente dos
-paradigmas de difusión representativos de la literatura reciente
-frente a dos líneas base discriminativas clásicas}. Este objetivo se
-descompone en los siguientes objetivos específicos.
+paradigmas representativos de la literatura reciente frente a dos
+líneas base discriminativas clásicas}. Se concreta en seis objetivos
+específicos:
 
 \begin{enumerate}[leftmargin=*]
     \item \textbf{Revisión del estado del arte.} Realizar una
@@ -186,11 +167,6 @@ descompone en los siguientes objetivos específicos.
     elección de \textit{schedule} y de máquina).
 \end{enumerate}
 
-Los objetivos están encadenados: la revisión del estado del arte
-restringe las decisiones de diseño, el experimento de mariposas
-valida el flujo sobre un dominio sencillo, los dos
-\textit{pipelines} de difusión constituyen la contribución
-principal, las líneas base delimitan su aportación real, la
-evaluación comparativa proporciona las conclusiones empíricas, y la
-infraestructura y el análisis de costes hacen el conjunto
-reproducible y honesto sobre sus recursos.
+En conjunto, estos seis objetivos llevan el trabajo desde la revisión
+de la literatura hasta una comparación empírica reproducible y honesta
+sobre los recursos que consume.

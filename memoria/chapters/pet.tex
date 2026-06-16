@@ -6,20 +6,16 @@
 
 Este capítulo desarrolla la contribución principal del trabajo: un
 sistema completo de reconstrucción de PET de dosis baja. El problema
-se formuló en la \Cref{subsec:pet-problema-inverso} como un problema
-inverso —recuperar el escaneo de dosis completa $\mathbf{x}$ a partir
-de la observación degradada $\mathbf{y}$, adquirida con un veinteavo
-de la dosis— y la \Cref{subsec:difusion-condicional} presentó las dos
-familias de soluciones basadas en difusión que coexisten en la
-literatura: el condicionamiento supervisado y el prior no condicional
-con guiado de medición. Siguiendo la trayectoria que dibuja el estado
-del arte (\Cref{sec:estado-del-arte}), se decide construir
-\textbf{ambos enfoques en paralelo} y compararlos sobre el mismo
-conjunto de test, añadiendo además dos líneas base discriminativas
-que delimitan la aportación real del paradigma de difusión. El diseño
-persigue dos objetivos: ser \emph{defendible científicamente} —cada
-decisión está justificada por la literatura o por los fundamentos
-teóricos del \Cref{cap:marco-teorico}—.
+inverso ---recuperar el escaneo de dosis completa $\mathbf{x}$ a partir
+de la observación de dosis baja $\mathbf{y}$--- y las dos familias de
+soluciones basadas en difusión ---condicionamiento supervisado y prior
+no condicional con guiado de medición--- se presentaron en el
+\Cref{cap:marco-teorico}. Siguiendo la trayectoria del estado del arte
+(\Cref{sec:estado-del-arte}), se construyen \textbf{ambos enfoques en
+paralelo} y se comparan sobre el mismo conjunto de test, junto a dos
+líneas base discriminativas que delimitan la aportación real de la
+difusión. Cada decisión de diseño se justifica por la literatura o por
+los fundamentos teóricos del \Cref{cap:marco-teorico}.
 
 El capítulo sigue el ciclo de vida natural del sistema: análisis del
 conjunto de datos (\Cref{sec:pet-datos}), preprocesamiento y formato
@@ -150,19 +146,13 @@ volumen para invertir la transformación durante la evaluación.
     \centering
     \includegraphics[width=0.92\linewidth]{img/asinh_normalization.pdf}
     \caption{Normalización per-volumen estabilizadora de varianza
-    (\Cref{eq:asinh-norm}) con los parámetros reales de un volumen del
-    conjunto ($M = 11\,827$ cuentas, percentil 99,5; $k = 10$). La
-    curva central traza el mapeo $x \mapsto x'$: el origen va a $-1$ y
-    el percentil de referencia $x=M$ a $+1$; el recuadro ampliado
-    muestra el régimen casi lineal cerca del origen y el codo en $x=k$,
-    donde la transformación pasa al régimen logarítmico. El histograma
-    superior es la distribución de cuentas del \textit{foreground}
-    —asimétrica y de cola pesada, concentrada cerca de cero—; el
-    lateral es esa misma distribución tras la transformación, ya
-    repartida de forma estable sobre la banda $[-1, +1]$ en la que
-    opera la difusión. El $0,5\%$ de vóxeles más brillantes sobresale
-    ligeramente por encima de $+1$ sin \textit{clipping}, lo que
-    mantiene exacta la inversión.}
+    (\Cref{eq:asinh-norm}) sobre un volumen real del conjunto
+    ($M = 11\,827$ cuentas, percentil 99,5; $k = 10$). En el centro, el
+    mapeo $x \mapsto x'$, que lleva el origen a $-1$ y el percentil $M$
+    a $+1$; alrededor, la distribución de cuentas del \textit{foreground}
+    antes (arriba) y después (lateral) de la transformación, que pasa de
+    una cola pesada concentrada cerca de cero a un reparto estable en
+    $[-1, +1]$.}
     \label{fig:asinh-norm}
 \end{figure}
 
@@ -306,10 +296,11 @@ interrumpido lo recupera intacto.
 
 \paragraph{Precisión mixta \texttt{bf16}.}
 El cómputo se ejecuta en \texttt{bfloat16} sobre los \textit{tensor
-cores} de la GPU, prácticamente el doble de rendimiento que
-\texttt{float32} sin riesgo apreciable de (el formato conserva el rango del \texttt{float32}). Se habilita
+cores} de la GPU, con prácticamente el doble de rendimiento que
+\texttt{float32} y sin riesgo apreciable de desbordamiento, pues
+\texttt{bf16} conserva el rango dinámico de \texttt{float32}. Se habilita
 además el modo TF32 para las multiplicaciones residuales en
-\texttt{float32}. 
+\texttt{float32}.
 
 \paragraph{Compilación del modelo con \texttt{torch.compile}.}
 La pasada hacia delante del U-Net se compila con TorchInductor, el
@@ -376,141 +367,82 @@ reanudación exacta del entrenamiento tras una interrupción
 
 \subsubsection{Motivación: del portátil a la GPU dedicada}
 
-El plan inicial contemplaba ejecutar el entrenamiento en local,
-sobre el mismo MacBook Pro M4 Pro (24~GB de memoria unificada,
-PyTorch con \textit{backend} MPS) del experimento de mariposas. Las
-estimaciones lo descartaron: en MPS, forzado a \texttt{float32} y
-con \textit{batch} efectivo 16, el coste estimado era de
-aproximadamente \textbf{200~horas por \textit{pipeline}} de difusión (+8 días). 
-Más allá del tiempo bruto, el entrenamiento sostenido acopla el ordenador personal al proceso durante más de
-una semana, con cada interrupción (cierre de tapa, suspensión, reinicio) convertida en riesgo operativo. 
-Se decidió migrar la fase PET a \textbf{RunPod}, un proveedor de GPU bajo demanda con tarifa
-proporcional al uso, y construir alrededor un entorno de ejecución
-reproducible cuyo diseño se describe a continuación.
+El plan inicial de entrenar en local sobre el mismo MacBook Pro M4 Pro
+(24~GB, \textit{backend} MPS) del experimento de mariposas se descartó
+por coste: forzado a \texttt{float32} y \textit{batch} efectivo 16, cada
+\textit{pipeline} de difusión estimaba unas \textbf{200~horas} ---más de
+ocho días acoplando el portátil al proceso, con cada suspensión como
+riesgo operativo---. Se migró la fase PET a \textbf{RunPod}, un proveedor
+de GPU bajo demanda con tarifa proporcional al uso, sobre el que se
+construyó el entorno reproducible que se describe a continuación.
 
 \subsubsection{Imagen Docker reproducible}
 
-Todo el entorno de software se encapsula en una imagen Docker
-construida sobre \texttt{python:3.13-slim}, de la que conviene destacar
-tres aspectos. Primero, prescinde de la imagen base de NVIDIA: los
-\textit{wheels} de PyTorch del índice \texttt{cu124} ya empaquetan las
-bibliotecas CUDA —el único requisito del host es el driver NVIDIA, que
-RunPod provee—, y se instalan antes que el resto de dependencias para
-que \texttt{pip} no resuelva por error la variante de CPU y para cachear
-esa capa por separado del código; se añade además \texttt{build-essential},
-sin cuyo compilador de C TorchInductor (\texttt{torch.compile},
-\Cref{subsec:pet-config}) no podría generar sus kernels en tiempo de
-ejecución. Segundo, la imagen \emph{no} hornea el código: un
-\textit{entrypoint} idempotente lo clona desde GitHub y levanta un
-servidor SSH —con la clave pública que RunPod inyecta por variable de
-entorno— antes de cualquier paso costoso, de modo que cada arranque
-parte del repositorio actualizado sin reconstruir la imagen y permite
-conectarse mientras se prepara el entorno; un fichero
-\texttt{docker-compose} valida imagen y \textit{entrypoint} en local
-(emulando \texttt{linux/amd64}) antes de desplegar. Y tercero, la imagen
-se publica en Docker Hub, lo que la convierte en plantilla reutilizable:
-cualquier instancia de GPU que se lance la descarga directamente, de
-manera que la máquina queda con el entorno listo en el momento de
-conectarse a ella, sin reinstalar nada.
+Todo el software se encapsula en una imagen Docker sobre
+\texttt{python:3.13-slim} que instala los \textit{wheels} de PyTorch del
+índice \texttt{cu124} ---con las bibliotecas CUDA ya empaquetadas, sin
+necesidad de la imagen base de NVIDIA---. La imagen no hornea el código:
+un \textit{entrypoint} idempotente lo clona desde GitHub y levanta un
+servidor SSH antes de cualquier paso costoso, de modo que cada arranque
+parte del repositorio actualizado sin reconstruir nada. Publicada en
+Docker Hub, sirve de plantilla reutilizable: cualquier instancia que se
+lance la descarga y queda con el entorno listo.
 
 \subsubsection{Distribución del dataset preprocesado vía Hugging Face}
 
-Subir 60~GB de datos preprocesados a cada instancia que se lanzara habría sido
-un cuello de botella a la hora de realizar experimentos. En su lugar, la caché de slices completa
-(\Cref{sec:pet-preprocesado}) se empaqueta una única vez en
-\textit{shards} de \texttt{tar} y se publica —junto al fichero de
-particiones \texttt{splits.json}— en un repositorio \emph{privado}
-de Hugging Face Datasets. Al arrancar la inicialización de Docker, el \textit{entrypoint}
-descarga los \textit{shards} con \texttt{hf\_transfer} (descarga
-paralela de alto ancho de banda), reconstruye la caché, y
-\textbf{verifica su integridad} comparando el número de ficheros
-\texttt{.pt} reconstruidos (477.690) con el esperado antes de borrar
-los \textit{shards}; si la cuenta no coincide, conserva la descarga
-para depuración y deja el contenedor vivo. Una marca en disco hace
-el proceso idempotente: los reinicios posteriores del pod detectan
-el dataset ya reconstruido y lo omiten.
+Para no resubir 60~GB a cada instancia, la caché de \textit{slices}
+(\Cref{sec:pet-preprocesado}) se empaqueta una sola vez en
+\textit{shards} de \texttt{tar} y se publica ---junto al fichero de
+particiones \texttt{splits.json}--- en un repositorio privado de Hugging
+Face Datasets. El \textit{entrypoint} los descarga con
+\texttt{hf\_transfer} (descarga paralela de alto ancho de banda),
+reconstruye la caché y verifica su integridad comparando el número de
+ficheros \texttt{.pt} reconstruidos (477.690) con el esperado.
 
 \subsubsection{Elección de almacenamiento y de máquina}
 
-RunPod separa el cómputo del almacenamiento:
-
-\begin{description}[leftmargin=*]
-    \item[\textit{Network volume} (almacenamiento persistente).] Se
-    asocia al pod un volumen de red que sobrevive al apagado de la
-    instancia. Sobre él se materializan el repositorio, la caché de
-    \textit{slices} ($\sim 60$~GB), los \textit{checkpoints} y los
-    \textit{logs} de TensorBoard. De esta manera, detener la GPU
-    para no pagar por horas ociosas no implica perder el estado del
-    trabajo ni volver a descargar el dataset; el volumen se factura
-    por GB-mes, una fracción pequeña del coste de GPU
-    (\Cref{sec:pet-costes}).
-    \item[Instancia GPU.] La máquina de referencia es una
-    \textbf{NVIDIA RTX PRO 4500 (Blackwell, 32~GB de VRAM)}, elegida
-    por tres criterios: \emph{memoria} —32~GB alojan el \textit{batch}
-    de 32 cortes a $256^2$ con el U-Net de 114~M de parámetros y su
-    copia EMA, sin acumulación de gradiente—, \emph{generación} —sus
-    \textit{tensor cores} rinden el \texttt{bf16} y el TF32 de la
-    \Cref{subsec:pet-config}— y \emph{precio} —las alternativas de
-    consumo de 24~GB (RTX 4090) habrían obligado a acumular gradiente—.
-    Sobre ella se desarrolla y depura el código, y sus 32~GB fijan el
-    \emph{suelo} de VRAM para el que se calibra toda la configuración
-    de entrenamiento. La ejecución real de los experimentos, en
-    cambio, se apoyó en un \textit{pool} rotatorio de tarjetas
-    (\Cref{subsec:pet-pool-gpu}).
-\end{description}
+RunPod separa cómputo y almacenamiento. Un \textit{network volume}
+persistente alberga el repositorio, la caché ($\sim 60$~GB), los
+\textit{checkpoints} y los \textit{logs}, y sobrevive al apagado de la
+GPU ---facturado por GB-mes, una fracción del coste de cómputo
+(\Cref{sec:pet-costes})---, de modo que detener la instancia para no
+pagar horas ociosas no implica perder estado ni volver a descargar el
+dataset. La máquina de referencia es una \textbf{NVIDIA RTX PRO 4500}
+(Blackwell, 32~GB de VRAM): sus 32~GB alojan el \textit{batch} de 32
+cortes a $256^2$ con el U-Net de 114~M de parámetros y su copia EMA sin
+acumulación de gradiente, y fijan el suelo de VRAM para el que se calibra
+toda la configuración. La ejecución real, en cambio, se apoyó en un
+\textit{pool} rotatorio de tarjetas (\Cref{subsec:pet-pool-gpu}).
 
 \subsubsection{Operativa de ejecución}
 
-El flujo de trabajo sobre el pod descansa en herramientas estándar
-de administración de sistemas Linux remotos:
-
-\begin{description}[leftmargin=*]
-    \item[SSH.] La conexión al pod se realiza por SSH sobre la
-    dirección y puerto que RunPod expone tras lanzar la instancia,
-    autenticada con la clave pública inyectada por el
-    \textit{entrypoint}.
-    \item[\texttt{tmux}.] Cada experimento se lanza dentro de una
-    sesión \texttt{tmux} en el pod. \texttt{tmux} desacopla el ciclo
-    de vida del proceso del de la conexión SSH: cerrar la terminal,
-    perder la red o reiniciar el portátil no interrumpen el
-    entrenamiento, y reconectarse permite recuperar la sesión
-    exactamente en el estado en que se dejó. Combinado con la
-    reanudación desde \textit{checkpoint}
-    (\Cref{subsec:pet-config}), el entrenamiento sobrevive tanto a
-    desconexiones como a reinicios del propio pod.
-    \item[Editor remoto.] La edición y depuración puntual del código
-    se realiza con Cursor (un \textit{fork} de Visual Studio Code) y
-    la extensión \textit{Remote--SSH}: el editor corre en local pero
-    opera sobre el sistema de archivos del pod por el mismo canal
-    SSH, sin sincronizar copias del código.
-\end{description}
-
-El código del proyecto está organizado para que esta operativa sea
-de un solo comando: un \emph{dispatcher} único
+La conexión al pod se realiza por SSH; cada experimento corre dentro de
+una sesión \texttt{tmux} que desacopla el proceso de la conexión
+---cerrar la terminal o reiniciar el portátil no lo interrumpen--- y,
+combinada con la reanudación desde \textit{checkpoint}
+(\Cref{subsec:pet-config}), sobrevive también a reinicios del propio pod;
+la edición puntual se hace con Cursor y la extensión \textit{Remote--SSH}.
+El código está organizado para que esta operativa sea de un solo comando:
+un \emph{dispatcher} único
 (\texttt{python -m src.main \{preprocess|train|reconstruct|evaluate|preview\}})
-enruta cada subcomando al módulo correspondiente, con un flag
-\texttt{--pipeline} que selecciona entre los dos \textit{pipelines}
-de difusión y las dos líneas base, y un preset \texttt{--smoke}
-(resolución $128^2$, 5 épocas, subconjunto de pacientes) que
-permite verificar el flujo completo de extremo a extremo en
-aproximadamente una hora antes de comprometer un entrenamiento
-largo. La infraestructura compartida (motor de entrenamiento,
-validación, E/S de volúmenes, métricas) vive en módulos comunes, de
-modo que los cuatro experimentos difieren únicamente en la
-construcción de la entrada del modelo y en su procedimiento de
-inferencia.
+enruta cada subcomando, con un flag \texttt{--pipeline} que selecciona
+entre los dos \textit{pipelines} y las dos líneas base, y un preset
+\texttt{--smoke} ($128^2$, 5 épocas, subconjunto de pacientes) que
+verifica el flujo completo en aproximadamente una hora antes de
+comprometer un entrenamiento largo. La infraestructura compartida (motor
+de entrenamiento, validación, E/S de volúmenes, métricas) vive en módulos
+comunes, de modo que los cuatro experimentos difieren únicamente en la
+construcción de la entrada del modelo y en su inferencia.
 
 \subsubsection{\textit{Pool} de GPUs y ejecución en paralelo}
 \label{subsec:pet-pool-gpu}
 
 La combinación de volumen persistente y reanudación desde
-\textit{checkpoint} (\Cref{subsec:pet-config}) convierte la GPU en
-un recurso intercambiable: detener un pod, lanzar otro con una
-tarjeta distinta y reanudar el entrenamiento es transparente para el
-estado del experimento. Como RunPod es un mercado bajo demanda cuya
-disponibilidad fluctúa, esto permitió asignar a cada experimento la
-tarjeta más conveniente entre las disponibles en cada momento
-(\Cref{tab:pet-gpus}).
+\textit{checkpoint} convierte la GPU en un recurso intercambiable:
+detener un pod y reanudar en otra tarjeta es transparente para el estado
+del experimento. Como RunPod es un mercado bajo demanda con
+disponibilidad fluctuante, esto permitió asignar a cada experimento la
+tarjeta más conveniente entre las disponibles (\Cref{tab:pet-gpus}).
 
 \begin{table}[h!]
     \centering
@@ -531,23 +463,19 @@ tarjeta más conveniente entre las disponibles en cada momento
 \end{table}
 
 Como la configuración se calibró para el suelo de 32~GB, las tarjetas
-con más memoria no aportan \textit{batch} adicional, pero sí más
-cómputo y —sobre todo— la posibilidad de \textbf{entrenar dos
-\textit{pipelines} simultáneamente} en instancias independientes,
-reduciendo a la mitad el tiempo de pared de los dos modelos de
-difusión. La \Cref{fig:pet-gpu-util} recoge una de esas ejecuciones en
-paralelo, con ambos entrenamientos corriendo sobre sendas instancias
-A100 cercanas a la saturación de cómputo.
+con más memoria no añaden \textit{batch}, pero sí más cómputo y la
+posibilidad de \textbf{entrenar los dos \textit{pipelines}
+simultáneamente} en instancias independientes, reduciendo a la mitad el
+tiempo de pared (\Cref{fig:pet-gpu-util}).
 
 \begin{figure}[h!]
     \centering
     \includegraphics[width=\linewidth]{img/gpu-utilization.png}
-    \caption{panel de monitorización de runpod durante el
-    entrenamiento simultáneo de los dos \textit{pipelines} de
-    difusión sobre dos instancias a100 independientes. Ambos pods
-    operan con la gpu prácticamente saturada (utilización de cómputo
-    en torno al 93--100\,\%) y un uso de vram holgado, por debajo de los 80~gb
-    de la a100 para no saturar el cómputo de la misma}
+    \caption{Panel de monitorización de RunPod durante el entrenamiento
+    simultáneo de los dos \textit{pipelines} de difusión sobre dos
+    instancias A100 independientes. Ambos pods operan con la GPU
+    prácticamente saturada (93--100\,\% de cómputo) y un uso de VRAM
+    holgado, por debajo de los 80~GB de la A100.}
     \label{fig:pet-gpu-util}
 \end{figure}
 
@@ -666,24 +594,17 @@ y (ii) restringidas a la máscara de \textit{foreground} del
 relevante porque ignora el fondo vacío; la variante completa es
 la convención estándar y permite la comparación con la literatura.
 
-Estas tres métricas se calculan sobre el \textbf{espacio
-normalizado} de las imágenes (la representación
-$\operatorname{arcsinh}$ en $[-1, +1]$), y no sobre el espacio de
-cuentas. La razón es que el PET tiene un rango dinámico altísimo:
-el PSNR colapsa hacia el vóxel más brillante, por lo que evaluarlo
-en cuentas equivaldría a medir casi exclusivamente cómo de bien se
-reproduce el punto más caliente, siendo numéricamente insensible
-a los errores del resto de la imagen; análogamente, los valores
-atípicos inflarían el SSIM. Además, promediar a lo largo de
-pacientes requiere una escala común para que las comparaciones
-intra-volumen sean justas. La reformulación clave es que
-$\operatorname{arcsinh}$ es monótona e invertible y se aplica por
-igual a la reconstrucción y al \textit{ground truth}: no oculta el
-error, sino que lo repondera para que cuenten los errores
-relativos en todo el rango dinámico en lugar de los errores
-absolutos en el pico. Así, PSNR/SSIM en espacio normalizado son
-una comparación fiel del resultado final, bajo una ponderación de
-intensidad en la que la métrica no está degenerada.
+Estas tres métricas se calculan sobre el \textbf{espacio normalizado}
+(la representación $\operatorname{arcsinh}$ en $[-1, +1]$), no sobre el
+espacio de cuentas. El PET tiene un rango dinámico altísimo: en cuentas,
+el PSNR colapsa hacia el vóxel más brillante ---mediría casi solo cómo se
+reproduce el punto más caliente, insensible al resto--- y los valores
+atípicos inflarían el SSIM. Como $\operatorname{arcsinh}$ es monótona e
+invertible y se aplica por igual a la reconstrucción y al \textit{ground
+truth}, no oculta el error: lo repondera para que cuenten los errores
+relativos en todo el rango dinámico en lugar de los absolutos en el pico,
+sobre una escala común que hace justas las comparaciones entre
+volúmenes.
 
 \paragraph{Preservación de intensidad.}
 Como métrica \textit{proxy} de la preservación de SUV —no se
@@ -959,10 +880,7 @@ no necesariamente fiel al paciente, coherente con su menor PSNR y SSIM.
     \caption{ROI cerebral sobre el corte axial número~555 del volumen
     de test \texttt{01122021\_1}. De izquierda a derecha: dosis completa
     (referencia), U-Net de regresión, difusión supervisada, RED-CNN y
-    difusión no condicional (DPS). La U-Net y la difusión supervisada
-    conservan mejor el contraste y el detalle interno; la RED-CNN
-    suaviza la estructura y la difusión no condicional introduce una
-    textura más granulada. Escala de intensidad común a todos los
+    difusión no condicional (DPS). Escala de intensidad común a todos los
     paneles.}
     \label{fig:pet-cual-slice}
 \end{figure}
@@ -994,8 +912,6 @@ lo largo del eje axial y afloran como rayas en la MIP.
     coronal del volumen de test \texttt{01122021\_1}. De izquierda a
     derecha: dosis completa (referencia), U-Net de regresión, difusión
     supervisada, RED-CNN y difusión no condicional (DPS, $\omega = 1$).
-    La difusión no condicional presenta un patrón de \textit{banding}
-    horizontal y un contraste lavado, ausentes en el resto de métodos.
     Escala de intensidad común a todos los paneles.}
     \label{fig:pet-cual-mip}
 \end{figure}
@@ -1026,10 +942,7 @@ cuantitativo cifró en escalares.
     \textit{banding} del modelo no condicional. MIP coronal de cuerpo
     completo del volumen de test \texttt{01122021\_1}: dosis completa
     (referencia) y reconstrucciones con $\omega = 1$, $\omega = 3$ y
-    $\omega = 5$. El \textit{banding} horizontal, severo con guiado
-    débil, se atenúa de forma monótona al aumentar $\omega$ y casi
-    desaparece en $\omega = 5$. Escala de intensidad común a todos los
-    paneles.}
+    $\omega = 5$. Escala de intensidad común a todos los paneles.}
     \label{fig:pet-cual-banding}
 \end{figure}
 
@@ -1112,15 +1025,12 @@ cuatro experimentos de entrenamiento, asignando a cada uno la GPU del
 \end{table}
 
 El coste agregado de cómputo documentado asciende a
-\textbf{$\approx 168$~USD} sobre 152~horas de GPU, repartidas entre
-las cuatro tarjetas del \textit{pool}. Las dos líneas discriminativas
-ilustran bien el desacople entre coste y arquitectura: RED-CNN, con
-$\sim 1{,}8$~millones de parámetros, completa su presupuesto de 100
-épocas en menos de la mitad de horas que la U-Net de regresión pese a
-operar a resolución completa, y sobre la tarjeta más barata del
-conjunto. El saldo total aprovisionado en RunPod a lo largo del
-proyecto fue algo mayor que esta cifra —se recargó en incrementos
-pequeños según se necesitaba— y absorbió además las pruebas
-\texttt{-{}-smoke}, la depuración interactiva, algún relanzamiento
-tras corregir errores y el inevitable tiempo de pod ocioso antes de
-detener cada instancia, además de un margen que quedó sin consumir.
+\textbf{$\approx 168$~USD} sobre 152~horas de GPU, repartidas entre las
+cuatro tarjetas del \textit{pool}. Las dos líneas discriminativas
+ilustran el desacople entre coste y arquitectura: RED-CNN, con
+$\sim 1{,}8$~millones de parámetros, completa sus 100 épocas en menos de
+la mitad de horas que la U-Net de regresión ---pese a operar a
+resolución completa--- y sobre la tarjeta más barata del conjunto. El
+saldo total aprovisionado fue algo mayor, pues absorbió además las
+pruebas \texttt{-{}-smoke}, la depuración interactiva, algún
+relanzamiento y el tiempo de pod ocioso antes de detener cada instancia.

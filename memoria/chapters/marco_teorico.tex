@@ -553,16 +553,14 @@ difusión}
 \label{sec:estado-del-arte}
 
 Establecido el aparato conceptual y formal, esta sección revisa la
-literatura sobre la que se apoya \emph{directamente} este trabajo. En
-lugar de un inventario exhaustivo, se eligen \textbf{tres trabajos de
-referencia} —los que se han analizado en mayor profundidad— porque,
-entre los tres, contienen las dos ideas que vertebran los
-\textit{pipelines} del \Cref{cap:pet}: el \emph{condicionamiento
-supervisado por concatenación de canal} y el \emph{guiado posterior}
-en inferencia (\Cref{subsec:difusion-condicional}). A continuación se
-mencionan, de forma deliberadamente más breve, dos contribuciones muy
-recientes que señalan hacia dónde se mueve la frontera del campo, pero
-que quedan fuera del alcance de esta memoria.
+literatura sobre la que se apoya directamente este trabajo. Se eligen
+\textbf{tres trabajos de referencia} porque, entre los tres, contienen
+las dos ideas que vertebran los \textit{pipelines} del \Cref{cap:pet}:
+el \emph{condicionamiento supervisado por concatenación de canal} y el
+\emph{guiado posterior} en inferencia
+(\Cref{subsec:difusion-condicional}). Se añaden después, más
+brevemente, dos contribuciones muy recientes que apuntan hacia la
+frontera del campo pero quedan fuera del alcance de esta memoria.
 
 \subsection{Tres trabajos de referencia}
 \label{subsec:soa-referencia}
@@ -678,18 +676,16 @@ reclama el estado del arte en las tres tareas que aborda
     \label{fig:soa-tat}
 \end{figure}
 
-\paragraph{Lectura conjunta.} Los tres trabajos de referencia dibujan
-una trayectoria nítida y, sobre todo, \emph{dos caminos}. Gong et
-al.~\cite{ddpmpet2023} siembra ambos sobre \textit{denoising}
-cerebral; DDPET-3D~\cite{ddpet3d} madura la vía del
-\textbf{condicionamiento supervisado por canal} a escala clínica 3D; y
-Singh et al.~\cite{scorepet2024} madura la vía del \textbf{guiado
-posterior} con un formalismo riguroso de \textit{score}/SDE. Esos dos
-caminos son exactamente los dos \textit{pipelines} que el
-\Cref{cap:pet} construye y compara sobre PET real. La frontera más
-reciente —\textit{backbones} de espacio de estados~\cite{mamba2025} y
-\textit{transformers} generalistas~\cite{tat2025}— diversifica la
-arquitectura de la red, pero deja abierta, y en buena medida
-ortogonal, la pregunta que este trabajo estudia: cuál de los dos modos
-de inyectar la medición rinde mejor para la reconstrucción de PET de
-dosis baja.
+\paragraph{Lectura conjunta.} Los tres trabajos dibujan \emph{dos
+caminos}: Gong et al.~\cite{ddpmpet2023} los siembra ambos sobre
+\textit{denoising} cerebral, DDPET-3D~\cite{ddpet3d} madura el
+\textbf{condicionamiento supervisado por canal} a escala clínica 3D y
+Singh et al.~\cite{scorepet2024} madura el \textbf{guiado posterior}
+con un formalismo riguroso de \textit{score}/SDE. Esos dos caminos son
+exactamente los dos \textit{pipelines} que el \Cref{cap:pet} construye
+y compara sobre PET real. La frontera más reciente ---\textit{backbones}
+de espacio de estados~\cite{mamba2025} y \textit{transformers}
+generalistas~\cite{tat2025}--- diversifica la arquitectura de la red,
+pero deja abierta, y en buena medida ortogonal, la pregunta de este
+trabajo: cuál de los dos modos de inyectar la medición rinde mejor en
+PET de dosis baja.

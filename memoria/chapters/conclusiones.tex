@@ -73,6 +73,17 @@ NRMSE, preservación de intensidad) y cualitativos (figuras
 comparación entre el enfoque supervisado y el prior no
 condicional con guiado.}
 
+También, surge una pregunta que plantea si de verdad merece la pena invertir el tiempo, recursos y 
+complejidad que 
+
+Asimismo, se ha observado que con los dos modelos que ofrecen mejor rendimiento ---el modelo de difusión 
+supervisada y la U-net--- se pueden reconstruir volúmenes NIfTI de baja calidad que son fieles a su 
+contraparte de alta calidad, y que no presentan \emph{banding} ni artefactos extraños. En cambio, volúmenes
+reconstruídos con los otros modelos presentan un alto nivel de banding y artefactos, lo cuál los inutiliza
+en la práctica a la hora de reconstruir estos volúmenes con mediciones parciales.
+
+... (incluir fotos de NIfTI reconstruído)
+
 \todo{Mostrar los volúmenes NIfTI reconstruídos completamente
 por el pipeline de difusión, y compararlos con los volúmenes 3d originales}
 
@@ -116,7 +127,7 @@ vigésima parte de la dosis.
 \section{Líneas de desarrollo futuro}
 \label{sec:lineas-futuras}
 
-Se identifican ocho extensiones, ordenadas por proximidad a la
+Se identifican seis extensiones, ordenadas por proximidad a la
 implementación actual.
 
 \begin{enumerate}[leftmargin=*]

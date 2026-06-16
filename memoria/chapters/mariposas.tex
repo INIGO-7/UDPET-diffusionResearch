@@ -111,15 +111,13 @@ estructural.
     \centering
     \includegraphics[width=0.9\linewidth]{img/U-net_example.png}
     \caption{Arquitectura U-Net original de Ronneberger et
-    al.~\cite{ronneberger2015unet}. El camino de contracción
-    (izquierda) reduce la resolución y aumenta los canales; el de
-    expansión (derecha) la restaura mediante \textit{up-convolutions};
-    las flechas grises horizontales son las conexiones de salto que
-    reinyectan el detalle espacial del codificador en el decodificador.
-    El ejemplo corresponde a la tarea de segmentación para la que se
-    concibió (salida de dos canales de clase); las U-Net de difusión
-    conservan esta topología en «U» pero añaden \textit{embeddings} de
-    paso temporal y bloques de atención.}
+    al.~\cite{ronneberger2015unet}, concebida para segmentación (salida
+    de dos canales de clase). El camino de contracción (izquierda)
+    reduce la resolución y aumenta los canales; el de expansión
+    (derecha) la restaura; las flechas grises horizontales son las
+    conexiones de salto. Las U-Net de difusión conservan esta topología
+    en «U» y añaden \textit{embeddings} de paso temporal y bloques de
+    atención.}
     \label{fig:unet}
 \end{figure}
 
@@ -220,15 +218,10 @@ de ruido.
 
 El modelo se optimiza con AdamW con tasa de aprendizaje inicial
 $\eta = 10^{-4}$ y un planificador cosenoidal con 500 pasos de
-calentamiento (\textit{warmup}). Este planificador modula la tasa de
-aprendizaje en dos fases: durante los primeros 500 pasos de
-entrenamiento (\textit{warmup}) la tasa crece linealmente desde 0
-hasta su valor máximo $\eta$, lo que evita actualizaciones bruscas
-de los pesos cuando el modelo aún está sin entrenar; a partir de ahí
-la tasa decae siguiendo una curva cosenoidal —suave al principio,
-más pronunciada en la zona media y de nuevo suave al final— hasta
-aproximarse a 0 en la última época, de modo que el ajuste final de
-los parámetros se realiza con pasos cada vez más pequeños. El
+calentamiento (\textit{warmup}): la tasa crece linealmente desde 0
+hasta $\eta$ durante el \textit{warmup} ---evitando actualizaciones
+bruscas con el modelo aún sin entrenar--- y decae después siguiendo una
+curva cosenoidal hasta aproximarse a 0 en la última época. El
 entrenamiento se lleva a cabo
 durante 100 épocas con precisión mixta \texttt{fp16} para reducir
 el consumo de memoria, y se recortan los gradientes a norma
@@ -242,15 +235,13 @@ reconstrucción PET (véase \Cref{sec:pet-entorno-cloud}).
 \section{Aprendizajes y resultados}
 \label{sec:mariposas-aprendizajes}
 
-Los modelos de difusión son buenos generalizando, ya que es más
-complicado que puedan memorizar los ejemplos de entrenamiento,
-dado que van a ver las mismas imágenes pero con una cantidad de
-ruido completamente diferente entre una época y otra. Se ven
-forzados a aprender la distribución subyacente de las imágenes
-que analizan, en este caso aprendiendo cómo es una mariposa.
-Aprender a predecir la cantidad de ruido que hay en una imagen
-es matemáticamente equivalente a predecir la imagen de una
-mariposa a partir de una imagen ruidosa.
+Los modelos de difusión generalizan bien y son poco propensos a
+memorizar: cada época presentan la misma imagen con un nivel de ruido
+distinto, lo que fuerza a la red a aprender la distribución subyacente
+---en este caso, el aspecto de una mariposa--- en lugar de ejemplos
+concretos. Predecir el ruido de una imagen es, además, matemáticamente
+equivalente a predecir la mariposa limpia a partir de su versión
+ruidosa.
 
 Se ha observado que la pérdida durante el entrenamiento decrece
 muy rápidamente en las primeras épocas, y después se estabiliza
