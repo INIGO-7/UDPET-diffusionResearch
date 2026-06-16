@@ -124,22 +124,23 @@ implementación actual.
 \section{Reflexión final}
 \label{sec:reflexion}
 
-También, surge una pregunta que plantea si de verdad merece la pena invertir el tiempo, recursos y 
-complejidad añadida que los modelos de difusión suponen. Según hemos observado, los resultados en métricas
-como \emph{SSIM} y \emph{PSNR} son máximes en el modelo de difusión supervisado, pero los valores de las
-métricas que operan en el espacio desnormalizado son mejores . La interpretación de esto es que estos modelos
-están muy cercanos en cuánto a métricas se refiere, y dado el coste añadido de un modelo de difusión, es 
-lógico que el modelo ganador resulte la U-net de regresión. Este modelo ya es suficientemente complejo
-como para capturar la estructura de las imágenes PET, y se entrena con un loss \emph{MSE} que intenta
-maximizar la similaridad visual entre imagen reconstruída y real. 
+Al finalizar este trabajo, surge una pregunta que plantea si de verdad merece la pena invertir el tiempo, 
+recursos y complejidad añadida que los modelos de difusión suponen. Según hemos observado, los resultados en métricas
+como \emph{SSIM} y \emph{PSNR} se maximizan dentro de nuestro espacio de experimentos por el modelo de difusión supervisado. 
+En cambio, los valores de las métricas que operan en el espacio desnormalizado son ligeramente mejores en la U-net de regresión. 
+Nuestra interpretación es que estos modelos son muy cercanos en cuánto a métricas y rendimiento se refiere y, 
+dado el coste añadido de entrenar modelos de difusión, es lógico que podamos interpretar al modelo ganador como la 
+U-net de regresión. Este modelo ya es suficientemente complejo como para capturar la estructura de las imágenes PET, 
+y se entrena con un loss \emph{MSE} que intenta maximizar la similaridad visual entre imagen reconstruída y real. 
 
-Dicho esto, la U-net se puede mejorar cambiando la resolución 
+Dicho esto, creemos que los modelos de difusión admiten mucha complejidad y que las posibilidades de modelización de los mismos son
+muy amplias, por lo tanto, mientras la U-net tiene unas líneas de extensión claras y lineales (aumento en el número de parámetros, atención, más resolución de entrada, etc),
+las líneas de extensión de los modelos de difusión son mucho más ricas y es posible que seguir investigando en este área pueda llegar a descubrir el modelo con mejor rendimiento global.
 
-Para cualquier estudio posterior centrado en reconstrucción de imágenes PET de baja dosis, lo recomendado sería
+Por ello, para cualquier estudio posterior centrado en reconstrucción de imágenes PET de baja dosis, lo recomendado sería
 empezar con una U-net de regresión, y optimizar ese modelo para llevarlo al máximo de rendimiento antes de
-explorar otras estrategias más complejas como los modelos de difusión, los cuales tienen una alta variedad de
-implementaciones, estructuras y posibilidades en el modelaje del entrenamiento, y es posible que se pueda
-implementar este paradigma encima de la U-net previamente diseñada.
+explorar otras estrategias más complejas como los modelos de difusión, vista la alta variedad de posibilidades de modelaje; además 
+seguramente se podría implementar este paradigma encima de la U-net previamente diseñada, por lo tanto el trabajo previo sería punto de partida a retomar al considerar los modelos de difusión.
 
 Asimismo, se ha observado que con los dos modelos que ofrecen mejor rendimiento ---el modelo de difusión 
 supervisada y la U-net--- se pueden reconstruir volúmenes NIfTI de baja calidad que son fieles a su 
@@ -149,6 +150,12 @@ en la práctica a la hora de reconstruir estos volúmenes con mediciones parcial
 
 ... (incluir fotos de NIfTI reconstruído)
 
-\todo{Reflexión personal sobre el aprendizaje adquirido durante
-el TFM y su encaje con los contenidos del Máster en Tratamiento
-Estadístico-Computacional de la Información.}
+Finalmente, este trabajo me ha ayudado a conocer más de cerca el dominio de la reconstrucción de imágenes médicas, 
+dándome la oportunidad de revisar literatura del estado del arte en las modalidades de reconstrucción de PET, 
+resonancia magnética y TAC. Gracias a ello, he sido capaz de poner en práctica nociones vistas en clase, entre 
+las cuales destaco el diseño y entrenamiento de redes neuronales, y la formulación de problemas utilizando herramientas
+matemáticas de estadística bayesiana. He cumplido el objetivo de afianzar los conceptos vistos durante 
+el máster y, además, he conseguido realizar una prueba de concepto de un sistema que 
+podría utilizarse algún día en producción como proceso post-escaneo de los escáneres PET, un entorno médico
+que se vería beneficiado por la reducción en las listas de espera para el acceso a escaneos PET, así como 
+la disminución en la dosis radioactiva inyectada durante este proceso a los pacientes. 
