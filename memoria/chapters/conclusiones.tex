@@ -7,62 +7,36 @@
 \section{Resumen del trabajo realizado}
 \label{sec:resumen}
 
-Este trabajo ha recorrido por completo el ciclo de vida de un
-sistema de reconstrucción de PET de dosis baja basado en modelos
-de difusión, desde sus fundamentos teóricos hasta la evaluación
-comparativa sobre datos reales. El punto de partida fue una
-revisión de los fundamentos de los modelos de difusión
-(\Cref{cap:marco-teorico}) y del estado del arte en reconstrucción
-de imagen médica (\Cref{sec:estado-del-arte}), de la que se
-extrajeron las dos familias de soluciones que vertebran la
-contribución. Antes de abordar el problema principal, un
-experimento controlado de generación incondicional sobre el
-conjunto de mariposas (\Cref{cap:mariposas}) sirvió para apropiarse
-del paradigma de extremo a extremo y para fijar decisiones que
-después se trasladaron al sistema PET —\textit{v-prediction},
-\textit{schedule} cosenoidal, EMA y la validación de tarea final
-como señal de convergencia, frente a una pérdida de entrenamiento
-que en difusión resulta engañosa—.
+El problema abordado en este trabajo es la reconstrucción de
+imágenes PET de dosis completa a partir de adquisiciones de dosis
+reducida a 1/20, con el fin de disminuir la radiación a la que se
+expone al paciente sin sacrificar la calidad diagnóstica. Para
+resolverlo se propusieron y compararon, bajo datos, normalización
+y presupuesto similares, dos familias de soluciones: los modelos de
+difusión —en su variante supervisada por concatenación de canales y
+en su variante de prior no condicional con guiado de medición
+(DPS)— y dos líneas base discriminativas —la misma U-Net entrenada
+como regresor directo y una RED-CNN—, que delimitan qué aporta
+realmente el paradigma estudiado.
 
-Sobre esa base se diseñó e implementó la contribución principal
-(\Cref{cap:pet}): un sistema 2D por \textit{slices} axiales sobre
-los 371 pares de volúmenes NIfTI del reto UDPET (dosis completa y
-dosis reducida a 1/20). El preprocesamiento —normalización
-$\operatorname{arcsinh}$ per-volumen, recorte y filtrado de
-\textit{slices}, todos ellos derivados \emph{únicamente} de la
-observación de dosis baja para no introducir fuga del objetivo—
-produjo una caché de unos 238.845 pares de cortes a $256^2$
-($\approx 60$~GB), particionada a nivel de paciente en
-$80/10/10$. Sobre ella se entrenaron cuatro modelos bajo datos,
-normalización y presupuesto idénticos: los dos \textit{pipelines}
-de difusión —supervisado por concatenación de canales con muestreo
-DDIM, y prior no condicional con guiado de medición (DPS)— y dos
-líneas base discriminativas —la misma U-Net entrenada como regresor
-directo y una RED-CNN— que delimitan qué aporta realmente el
-paradigma generativo. Todo ello se ejecutó sobre una
-infraestructura reproducible en la nube (imagen Docker, dataset
-publicado en Hugging Face y un \textit{pool} rotatorio de GPUs de
-RunPod con reanudación desde \textit{checkpoint}), cuyo coste de
-cómputo se documentó de forma explícita: $\approx 168$~USD sobre
-152~horas de GPU para los cuatro entrenamientos completos
-(\Cref{sec:pet-costes}).
+De esa comparación, lo que mejor ha funcionado han sido la difusión
+supervisada y la U-Net de regresión: ambas reconstruyen
+volúmenes fieles a su contraparte de dosis completa, con una ventaja
+del paradigma de difusión real pero estrecha frente a un regresor
+directo mucho más barato en inferencia. En cambio, la vía no
+condicional con DPS no resultó competitiva, lo que sugiere que el
+ruido gaussiano del \textit{schedule} no captura adecuadamente la
+naturaleza del ruido PET.
 
-La evaluación comparativa sobre el conjunto de test (38 volúmenes,
-24.472 \textit{slices}) ofrece la conclusión central del trabajo.
-Todos los métodos aprendidos superan ampliamente a la observación
-de dosis baja, y el orden en calidad estructural es nítido:
-difusión supervisada (PSNR \textit{whole} $37{,}12$~dB) $>$ U-Net
-de regresión ($36{,}78$) $>$ RED-CNN ($35{,}32$) $>$ DPS ($33{,}74$)
-$>$ dosis baja ($28{,}31$). El resultado más interesante,
-contraintuitivo respecto a la expectativa inicial, es que la
-ventaja del paradigma de difusión es \emph{real pero estrecha}: la
-difusión supervisada apenas mejora en $+0{,}34$~dB a un regresor
-directo de su misma arquitectura, que además preserva la intensidad
-ligeramente mejor, y todo ello a un coste de inferencia órdenes de
-magnitud mayor. La vía no condicional con DPS, bajo el acoplamiento
-más simple y defendible, no alcanzó siquiera a la pequeña RED-CNN.
-Estos hallazgos —y su lectura coste-beneficio— se detallan en las
-secciones siguientes.
+Más allá de los resultados, este trabajo presenta muchas capas de desarrollo; entre ellas,
+el entendimiento teórico del paradigma, junto sus variaciones y un estudio de lo que se está realizando
+recientemente en el estado del arte, el entendimiento también práctico del paradigma de estudio con un 
+ejemplo menos complejo (mariposas), el empleo de una metodología de entrenamiento en la nube que nos
+da acceso a máquinas más potentes, donde creamos una configuración con docker y ssh que agiliza la 
+ejecución de experimentos, y la implementación de los distintos modelos en Python con Pytorch y HuggingFace 
+(diffusers, accelerate). Este estudio está orientado tanto a aprender conceptos nuevos 
+---en particular los modelos de difusión--- como a afianzar y aplicar en la práctica los fundamentos de
+matemática y estadística adquiridos durante el máster.
 
 \section{Resultados principales}
 \label{sec:resultados}
