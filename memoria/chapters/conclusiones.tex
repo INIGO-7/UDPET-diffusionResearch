@@ -7,14 +7,62 @@
 \section{Resumen del trabajo realizado}
 \label{sec:resumen}
 
-\todo{Recapitular brevemente: revisión de fundamentos teóricos
-de los modelos de difusión, experimento controlado con mariposas,
-diseño e implementación del sistema de reconstrucción PET en dos
-\textit{pipelines} (supervisado condicional y prior no
-condicional con DPS) más dos líneas base discriminativas (U-Net
-de regresión y RED-CNN), infraestructura reproducible en la nube,
-evaluación comparativa sobre el conjunto de test y análisis de
-costes.}
+Este trabajo ha recorrido por completo el ciclo de vida de un
+sistema de reconstrucción de PET de dosis baja basado en modelos
+de difusión, desde sus fundamentos teóricos hasta la evaluación
+comparativa sobre datos reales. El punto de partida fue una
+revisión de los fundamentos de los modelos de difusión
+(\Cref{cap:marco-teorico}) y del estado del arte en reconstrucción
+de imagen médica (\Cref{sec:estado-del-arte}), de la que se
+extrajeron las dos familias de soluciones que vertebran la
+contribución. Antes de abordar el problema principal, un
+experimento controlado de generación incondicional sobre el
+conjunto de mariposas (\Cref{cap:mariposas}) sirvió para apropiarse
+del paradigma de extremo a extremo y para fijar decisiones que
+después se trasladaron al sistema PET —\textit{v-prediction},
+\textit{schedule} cosenoidal, EMA y la validación de tarea final
+como señal de convergencia, frente a una pérdida de entrenamiento
+que en difusión resulta engañosa—.
+
+Sobre esa base se diseñó e implementó la contribución principal
+(\Cref{cap:pet}): un sistema 2D por \textit{slices} axiales sobre
+los 371 pares de volúmenes NIfTI del reto UDPET (dosis completa y
+dosis reducida a 1/20). El preprocesamiento —normalización
+$\operatorname{arcsinh}$ per-volumen, recorte y filtrado de
+\textit{slices}, todos ellos derivados \emph{únicamente} de la
+observación de dosis baja para no introducir fuga del objetivo—
+produjo una caché de unos 238.845 pares de cortes a $256^2$
+($\approx 60$~GB), particionada a nivel de paciente en
+$80/10/10$. Sobre ella se entrenaron cuatro modelos bajo datos,
+normalización y presupuesto idénticos: los dos \textit{pipelines}
+de difusión —supervisado por concatenación de canales con muestreo
+DDIM, y prior no condicional con guiado de medición (DPS)— y dos
+líneas base discriminativas —la misma U-Net entrenada como regresor
+directo y una RED-CNN— que delimitan qué aporta realmente el
+paradigma generativo. Todo ello se ejecutó sobre una
+infraestructura reproducible en la nube (imagen Docker, dataset
+publicado en Hugging Face y un \textit{pool} rotatorio de GPUs de
+RunPod con reanudación desde \textit{checkpoint}), cuyo coste de
+cómputo se documentó de forma explícita: $\approx 168$~USD sobre
+152~horas de GPU para los cuatro entrenamientos completos
+(\Cref{sec:pet-costes}).
+
+La evaluación comparativa sobre el conjunto de test (38 volúmenes,
+24.472 \textit{slices}) ofrece la conclusión central del trabajo.
+Todos los métodos aprendidos superan ampliamente a la observación
+de dosis baja, y el orden en calidad estructural es nítido:
+difusión supervisada (PSNR \textit{whole} $37{,}12$~dB) $>$ U-Net
+de regresión ($36{,}78$) $>$ RED-CNN ($35{,}32$) $>$ DPS ($33{,}74$)
+$>$ dosis baja ($28{,}31$). El resultado más interesante,
+contraintuitivo respecto a la expectativa inicial, es que la
+ventaja del paradigma de difusión es \emph{real pero estrecha}: la
+difusión supervisada apenas mejora en $+0{,}34$~dB a un regresor
+directo de su misma arquitectura, que además preserva la intensidad
+ligeramente mejor, y todo ello a un coste de inferencia órdenes de
+magnitud mayor. La vía no condicional con DPS, bajo el acoplamiento
+más simple y defendible, no alcanzó siquiera a la pequeña RED-CNN.
+Estos hallazgos —y su lectura coste-beneficio— se detallan en las
+secciones siguientes.
 
 \section{Resultados principales}
 \label{sec:resultados}
@@ -120,24 +168,6 @@ implementación actual.
     vecinos como canales adicionales de entrada (2.5D) para
     introducir coherencia inter-\textit{slice}, o pasar a un
     U-Net 3D sobre parches si el hardware se amplía.
-
-    \item \textbf{Reponderado de pérdida por SNR mínimo.}
-    Activación del \textit{Min-SNR-$\gamma$} de Hang et
-    al.~\cite{hang2023minsnr} si la convergencia del
-    \textit{v-prediction} con 100 épocas resulta insuficiente.
-
-    \item \textbf{Modelos puente (I\textsuperscript{2}SB).}
-    Liu et al.~\cite{liu2023i2sb} proponen entrenar un modelo
-    cuyo proceso directo mapee directamente la distribución de
-    dosis completa a la de dosis baja mediante un puente de
-    Schrödinger, sustituyendo el ruido gaussiano del
-    \textit{schedule} por una transición entre las dos
-    distribuciones de interés. Es la línea más cercana a la
-    observación recogida en la \Cref{sec:pet-ruido}: el proceso
-    directo del modelo imita explícitamente la reducción de
-    dosis. Constituye una línea prometedora para un capítulo
-    de \textit{contribución} en la memoria, o como punto de
-    partida para una futura tesis doctoral.
 
     \item \textbf{Métricas clínicas.} En el caso de obtener
     metadatos de dosis inyectada y peso del paciente, computar

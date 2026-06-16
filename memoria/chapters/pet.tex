@@ -283,14 +283,13 @@ Los hiperparámetros de optimización son:
     $\sim\sqrt{32/16}$ sobre la línea base $10^{-4}$ del modelo de
     mariposas, para acompañar el incremento de \textit{batch} sin
     alterar la dinámica del entrenamiento.
-    \item \textit{Batch} de entrenamiento de 32 \textit{slices} con
-    acumulación de gradiente unitaria (\textit{batch} efectivo de
-    32). En el \textit{fallback} local sobre MPS se emplea
-    \textit{micro-batch} de 4 con acumulación de 4 pasos.
+    \item \textit{Batch} de entrenamiento que oscila entre 16, 32 y 64 \textit{slices}, dependiendo de la GPU 
+    escogida y el tipo de entrenamiento. 
     \item Recorte de gradientes a norma máxima $1{,}0$.
-    \item Se entrena durante \textbf{100 épocas}, lo cual equivale a
+    \item El entrenamiento de los pipelines de difusión marca \textbf{100 épocas}, lo cual equivale a
     aproximadamente $6 \times 10^{5}$ pasos de gradiente sobre los
-    $\sim 1{,}9 \times 10^{5}$ pares de cortes de entrenamiento.
+    $\sim 1{,}9 \times 10^{5}$ pares de cortes de entrenamiento. Igualmente, vamos a comprobar el rendimiento
+    en reconstrucción de estos sistemas mientras se entrenan, parando el entrenamiento si recibimos señales de convergencia.
 \end{itemize}
 
 Sobre esta base se aplican cuatro técnicas de estabilización y
@@ -301,28 +300,23 @@ Se mantiene una copia sombra de los pesos del U-Net actualizada como
 media móvil exponencial con factor de decaimiento $0{,}9999$. Los
 pesos EMA —un promedio suavizado de la trayectoria de optimización—
 son los que se evalúan y se exportan como \textit{checkpoint} de
-inferencia; aportan típicamente $0{,}5$--$1$~dB adicionales de PSNR
-sin coste de entrenamiento. El estado EMA se registra junto al del
+inferencia. El estado EMA se registra junto al del
 optimizador, de modo que la reanudación de un entrenamiento
 interrumpido lo recupera intacto.
 
 \paragraph{Precisión mixta \texttt{bf16}.}
 El cómputo se ejecuta en \texttt{bfloat16} sobre los \textit{tensor
-cores} de la GPU, prácticamente el doble de \textit{throughput} que
-\texttt{float32} sin riesgo apreciable de desbordamiento numérico
-(el formato conserva el rango del \texttt{float32}). Se habilita
+cores} de la GPU, prácticamente el doble de rendimiento que
+\texttt{float32} sin riesgo apreciable de (el formato conserva el rango del \texttt{float32}). Se habilita
 además el modo TF32 para las multiplicaciones residuales en
-\texttt{float32}. En el \textit{fallback} local sobre MPS se
-mantiene \texttt{float32} puro, por las inestabilidades conocidas
-del \textit{backend} con \texttt{float16}.
+\texttt{float32}. 
 
 \paragraph{Compilación del modelo con \texttt{torch.compile}.}
 La pasada hacia delante del U-Net se compila con TorchInductor, el
 compilador JIT de PyTorch, que fusiona kernels y elimina
-lanzamientos redundantes de GPU; en un U-Net limitado por cómputo
-como el empleado, la mejora observada es de entre $1{,}3\times$ y
+lanzamientos redundantes de GPU; la mejora observada es de entre $1{,}3\times$ y
 $2\times$ en velocidad de entrenamiento. La compilación se aísla en
-un manejador exclusivo de la pasada hacia delante que comparte
+un orquestador exclusivo de la pasada hacia delante que comparte
 parámetros con el modelo original, de modo que el optimizador, la
 EMA, el recorte de gradientes y el guardado/carga de
 \textit{checkpoints} siguen operando sobre el modelo sin compilar:
@@ -335,15 +329,40 @@ Como se observó en el experimento de mariposas
 una mala señal de convergencia en difusión: el MSE sobre
 $\mathbf{v}$, promediado sobre \textit{timesteps} aleatorios, se
 satura en las primeras épocas mientras la calidad de imagen sigue
-mejorando. Por ello, en cada \textit{checkpoint} se ejecuta una
+mejorando de manera ``invisible''. Por ello, en cada \textit{checkpoint} se ejecuta una
 validación \emph{de tarea final}: se reconstruye un subconjunto fijo
 de 16 cortes de validación —equiespaciados sobre todo el split para
 cubrir distintos niveles anatómicos— con el mismo procedimiento de
 inferencia que se usará en test, usando los pesos EMA, y se
 registran PSNR/SSIM/NRMSE contra el objetivo de dosis completa. La
-convergencia se declara cuando estas métricas se estancan. El
-generador aleatorio de la validación se aísla del de entrenamiento
-para no perturbar la reproducibilidad del bucle principal.
+convergencia se declara cuando estas métricas se estancan.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.32\linewidth]{img/pet_reconstruction/191022_1_low.png}
+    \hfill
+    \includegraphics[width=0.32\linewidth]{img/pet_reconstruction/191022_1_epoch10.png}
+    \hfill
+    \includegraphics[width=0.32\linewidth]{img/pet_reconstruction/191022_1_full.png}
+
+    \vspace{0.5em}
+
+    \includegraphics[width=0.32\linewidth]{img/pet_reconstruction/160822_2_low.png}
+    \hfill
+    \includegraphics[width=0.32\linewidth]{img/pet_reconstruction/160822_2_epoch10.png}
+    \hfill
+    \includegraphics[width=0.32\linewidth]{img/pet_reconstruction/160822_2_full.png}
+    \caption{Dos cortes de validación reconstruidos por el Pipeline~B (prior no condicional con DPS)
+    en el \textit{checkpoint} de la época~10 durante el entrenamiento.
+    Cada fila corresponde a un corte y muestra, de izquierda a derecha,
+    la entrada de dosis baja, la reconstrucción y el objetivo de dosis
+    completa. La reconstrucción se obtiene con el mismo procedimiento de
+    inferencia que se emplea en test (DDIM, pesos EMA) sobre un corte
+    fijo del conjunto de validación, lo que permite seguir la mejora de
+    la calidad de imagen a lo largo del entrenamiento de forma
+    independiente de la pérdida.}
+    \label{fig:pet-validacion-entrenamiento}
+\end{figure}
 
 Los \textit{checkpoints} se guardan cada 10 épocas en directorios
 autocontenidos (pesos EMA del U-Net en formato \texttt{diffusers},
@@ -362,57 +381,46 @@ sobre el mismo MacBook Pro M4 Pro (24~GB de memoria unificada,
 PyTorch con \textit{backend} MPS) del experimento de mariposas. Las
 estimaciones lo descartaron: en MPS, forzado a \texttt{float32} y
 con \textit{batch} efectivo 16, el coste estimado era de
-aproximadamente \textbf{75~horas por \textit{pipeline}} de difusión,
-además de cerca de 2~horas por evaluación completa del conjunto de
-test. Más allá del tiempo bruto, 150~horas de entrenamiento
-sostenido acoplan el ordenador personal al proceso durante más de
-una semana, con cada interrupción (cierre de tapa, suspensión,
-reinicio) convertida en riesgo operativo. Se decidió migrar la fase
-PET a \textbf{RunPod}, un proveedor de GPU bajo demanda con tarifa
+aproximadamente \textbf{200~horas por \textit{pipeline}} de difusión (+8 días). 
+Más allá del tiempo bruto, el entrenamiento sostenido acopla el ordenador personal al proceso durante más de
+una semana, con cada interrupción (cierre de tapa, suspensión, reinicio) convertida en riesgo operativo. 
+Se decidió migrar la fase PET a \textbf{RunPod}, un proveedor de GPU bajo demanda con tarifa
 proporcional al uso, y construir alrededor un entorno de ejecución
 reproducible cuyo diseño se describe a continuación.
 
 \subsubsection{Imagen Docker reproducible}
 
 Todo el entorno de software se encapsula en una imagen Docker
-construida sobre \texttt{python:3.13-slim}. Dos decisiones de diseño
-merecen comentario:
-
-\begin{itemize}[leftmargin=*]
-    \item \textbf{CUDA sin imagen base de NVIDIA.} Los
-    \textit{wheels} de PyTorch del índice \texttt{cu124} empaquetan
-    las bibliotecas CUDA necesarias, de modo que basta una imagen
-    base ligera de Python: el único requisito del host es el driver
-    NVIDIA, que RunPod provee. PyTorch se instala antes que el resto
-    de dependencias para que \texttt{pip} no resuelva por error la
-    variante de CPU, y la capa de dependencias se cachea separada
-    del código para acelerar las reconstrucciones de la imagen.
-    \item \textbf{Compilador de C en la imagen.} TorchInductor
-    (\texttt{torch.compile}, \Cref{subsec:pet-config}) genera y
-    compila kernels en tiempo de ejecución y necesita \texttt{gcc};
-    se incluye \texttt{build-essential} en la imagen, sin lo cual la
-    compilación falla al arrancar el entrenamiento.
-\end{itemize}
-
-La imagen \emph{no} hornea el código del proyecto: un
-\textit{entrypoint} idempotente lo clona desde GitHub al arrancar el
-contenedor, de modo que cada arranque parte del repositorio
-actualizado sin reconstruir la imagen. El mismo \textit{entrypoint}
-arranca un servidor SSH —inyectando la clave pública que RunPod
-expone por variable de entorno— antes de cualquier paso costoso,
-para poder conectarse mientras se prepara el entorno. Un fichero
-\texttt{docker-compose} permite validar la imagen y el
-\textit{entrypoint} en local (emulando \texttt{linux/amd64}) antes
-de desplegar.
+construida sobre \texttt{python:3.13-slim}, de la que conviene destacar
+tres aspectos. Primero, prescinde de la imagen base de NVIDIA: los
+\textit{wheels} de PyTorch del índice \texttt{cu124} ya empaquetan las
+bibliotecas CUDA —el único requisito del host es el driver NVIDIA, que
+RunPod provee—, y se instalan antes que el resto de dependencias para
+que \texttt{pip} no resuelva por error la variante de CPU y para cachear
+esa capa por separado del código; se añade además \texttt{build-essential},
+sin cuyo compilador de C TorchInductor (\texttt{torch.compile},
+\Cref{subsec:pet-config}) no podría generar sus kernels en tiempo de
+ejecución. Segundo, la imagen \emph{no} hornea el código: un
+\textit{entrypoint} idempotente lo clona desde GitHub y levanta un
+servidor SSH —con la clave pública que RunPod inyecta por variable de
+entorno— antes de cualquier paso costoso, de modo que cada arranque
+parte del repositorio actualizado sin reconstruir la imagen y permite
+conectarse mientras se prepara el entorno; un fichero
+\texttt{docker-compose} valida imagen y \textit{entrypoint} en local
+(emulando \texttt{linux/amd64}) antes de desplegar. Y tercero, la imagen
+se publica en Docker Hub, lo que la convierte en plantilla reutilizable:
+cualquier instancia de GPU que se lance la descarga directamente, de
+manera que la máquina queda con el entorno listo en el momento de
+conectarse a ella, sin reinstalar nada.
 
 \subsubsection{Distribución del dataset preprocesado vía Hugging Face}
 
-Subir 60~GB de caché preprocesada a cada máquina efímera habría sido
-el cuello de botella del flujo. En su lugar, la caché completa
+Subir 60~GB de datos preprocesados a cada instancia que se lanzara habría sido
+un cuello de botella a la hora de realizar experimentos. En su lugar, la caché de slices completa
 (\Cref{sec:pet-preprocesado}) se empaqueta una única vez en
 \textit{shards} de \texttt{tar} y se publica —junto al fichero de
 particiones \texttt{splits.json}— en un repositorio \emph{privado}
-de Hugging Face Datasets. Al arrancar, el \textit{entrypoint}
+de Hugging Face Datasets. Al arrancar la inicialización de Docker, el \textit{entrypoint}
 descarga los \textit{shards} con \texttt{hf\_transfer} (descarga
 paralela de alto ancho de banda), reconstruye la caché, y
 \textbf{verifica su integridad} comparando el número de ficheros
@@ -436,28 +444,19 @@ RunPod separa el cómputo del almacenamiento:
     trabajo ni volver a descargar el dataset; el volumen se factura
     por GB-mes, una fracción pequeña del coste de GPU
     (\Cref{sec:pet-costes}).
-    \item[Instancia GPU.] Se selecciona una \textbf{NVIDIA RTX PRO
-    4500 (arquitectura Blackwell, 32~GB de VRAM)}. La elección
-    responde a tres criterios: (i)~\emph{memoria}: 32~GB permiten el
-    \textit{batch} de 32 cortes a $256^2$ con el U-Net de 114~M de
-    parámetros más su copia EMA sin acumulación de gradiente;
-    (ii)~\emph{generación}: los \textit{tensor cores} Blackwell
-    rinden el \texttt{bf16} y el TF32 de los que depende la
-    configuración de la \Cref{subsec:pet-config}; y
-    (iii)~\emph{precio}: las alternativas de consumo con menos VRAM
-    (RTX 4090, 24~GB) habrían obligado a acumulación de gradiente.
-    Esta tarjeta fija el \emph{suelo} de hardware del proyecto —los
-    32~GB de VRAM para los que se calibró la configuración de la
-    \Cref{subsec:pet-config}— y la máquina de referencia sobre la
-    que se desarrolla y depura el código; recupera la precisión mixta
-    y el \textit{batch} completo, y desacopla por completo el
-    entrenamiento del ordenador personal. Ahora bien, RunPod es un
-    mercado de capacidad bajo demanda y la disponibilidad real de
-    cada modelo de tarjeta fluctúa, de modo que los experimentos
-    acabaron ejecutándose sobre un \textit{pool} rotatorio de GPUs
-    —incluida la GPU de centro de datos A100 cuando estaba
-    disponible a buen precio, para acortar el tiempo de respuesta y
-    paralelizar entrenamientos—, como se detalla a continuación.
+    \item[Instancia GPU.] La máquina de referencia es una
+    \textbf{NVIDIA RTX PRO 4500 (Blackwell, 32~GB de VRAM)}, elegida
+    por tres criterios: \emph{memoria} —32~GB alojan el \textit{batch}
+    de 32 cortes a $256^2$ con el U-Net de 114~M de parámetros y su
+    copia EMA, sin acumulación de gradiente—, \emph{generación} —sus
+    \textit{tensor cores} rinden el \texttt{bf16} y el TF32 de la
+    \Cref{subsec:pet-config}— y \emph{precio} —las alternativas de
+    consumo de 24~GB (RTX 4090) habrían obligado a acumular gradiente—.
+    Sobre ella se desarrolla y depura el código, y sus 32~GB fijan el
+    \emph{suelo} de VRAM para el que se calibra toda la configuración
+    de entrenamiento. La ejecución real de los experimentos, en
+    cambio, se apoyó en un \textit{pool} rotatorio de tarjetas
+    (\Cref{subsec:pet-pool-gpu}).
 \end{description}
 
 \subsubsection{Operativa de ejecución}
@@ -508,10 +507,10 @@ La combinación de volumen persistente y reanudación desde
 \textit{checkpoint} (\Cref{subsec:pet-config}) convierte la GPU en
 un recurso intercambiable: detener un pod, lanzar otro con una
 tarjeta distinta y reanudar el entrenamiento es transparente para el
-estado del experimento. Esto permitió aprovechar el mercado bajo
-demanda de RunPod y asignar a cada experimento la tarjeta más
-conveniente entre las disponibles en cada momento. El conjunto de
-GPUs empleado se recoge en la \Cref{tab:pet-gpus}.
+estado del experimento. Como RunPod es un mercado bajo demanda cuya
+disponibilidad fluctúa, esto permitió asignar a cada experimento la
+tarjeta más conveniente entre las disponibles en cada momento
+(\Cref{tab:pet-gpus}).
 
 \begin{table}[h!]
     \centering
@@ -527,35 +526,28 @@ GPUs empleado se recoge en la \Cref{tab:pet-gpus}.
         \bottomrule
     \end{tabular}
     \caption{\textit{Pool} de instancias GPU de RunPod empleadas, con
-    su tarifa horaria. La configuración de entrenamiento se calibró
-    para el suelo de 32~GB (RTX PRO 4500), de modo que corre sin
-    cambios en cualquiera de ellas; las tarjetas con más VRAM se
-    reservaron para acelerar y paralelizar los entrenamientos más
-    costosos.}
+    su tarifa horaria.}
     \label{tab:pet-gpus}
 \end{table}
 
-Como la configuración exige solo 32~GB, las tarjetas con más memoria
-no aportan \textit{batch} adicional, pero sí más rendimiento de
-cómputo —y, sobre todo, la posibilidad de \textbf{entrenar dos
-\textit{pipelines} simultáneamente} en dos instancias independientes,
-reduciendo a la mitad el tiempo de pared para completar los dos
-modelos de difusión—. La \Cref{fig:pet-gpu-util} muestra el panel de
-monitorización de RunPod durante una de esas ejecuciones en paralelo,
-con los dos entrenamientos de difusión corriendo a la vez sobre
-sendas instancias A100 cercanas a la saturación de cómputo.
+Como la configuración se calibró para el suelo de 32~GB, las tarjetas
+con más memoria no aportan \textit{batch} adicional, pero sí más
+cómputo y —sobre todo— la posibilidad de \textbf{entrenar dos
+\textit{pipelines} simultáneamente} en instancias independientes,
+reduciendo a la mitad el tiempo de pared de los dos modelos de
+difusión. La \Cref{fig:pet-gpu-util} recoge una de esas ejecuciones en
+paralelo, con ambos entrenamientos corriendo sobre sendas instancias
+A100 cercanas a la saturación de cómputo.
 
 \begin{figure}[h!]
     \centering
-    \includegraphics[width=\linewidth]{img/GPU-utilization.png}
-    \caption{Panel de monitorización de RunPod durante el
+    \includegraphics[width=\linewidth]{img/gpu-utilization.png}
+    \caption{panel de monitorización de runpod durante el
     entrenamiento simultáneo de los dos \textit{pipelines} de
-    difusión sobre dos instancias A100 independientes. Ambos pods
-    operan con la GPU prácticamente saturada (utilización de cómputo
-    en torno al 93--100\,\%) y un uso de VRAM holgado —la
-    configuración se calibró para 32~GB, muy por debajo de los 80~GB
-    de la A100—, lo que confirma que el cuello de botella es el
-    cómputo y no la memoria.}
+    difusión sobre dos instancias a100 independientes. Ambos pods
+    operan con la gpu prácticamente saturada (utilización de cómputo
+    en torno al 93--100\,\%) y un uso de vram holgado, por debajo de los 80~gb
+    de la a100 para no saturar el cómputo de la misma}
     \label{fig:pet-gpu-util}
 \end{figure}
 
@@ -571,15 +563,10 @@ exclusivamente los canales de entrada y salida:
 
 \begin{itemize}[leftmargin=*]
     \item \texttt{block\_out\_channels = (128, 128, 256, 256, 512,
-    512)}, lo cual produce un modelo de aproximadamente 114
-    millones de parámetros (idéntico recuento al modelo de
-    mariposas, dado que el primer canal convolucional contribuye
-    una fracción despreciable al total).
+    512)}.
     \item \texttt{layers\_per\_block = 2}.
     \item Bloque de atención multi-cabeza en el quinto nivel del
-    camino descendente y ascendente (resolución espacial
-    $16 \times 16$ tras cinco \textit{downsamplings} del
-    \textit{input} de $256 \times 256$).
+    camino descendente y ascendente.
     \item El \textit{timestep} $t$ se inyecta mediante
     \textit{embeddings} sinusoidales en cada bloque ResNet.
 \end{itemize}
@@ -767,6 +754,20 @@ el espacio normalizado es con signo y el fondo vive en $-1$.
 \section{Comparación de resultados}
 \label{sec:pet-resultados}
 
+La evaluación de los cuatro modelos se presenta en dos planos
+complementarios. El plano \emph{cuantitativo}
+(\Cref{sec:pet-resultados-cuant}) resume el comportamiento agregado
+sobre el conjunto de test mediante las métricas definidas en la
+\Cref{sec:pet-metricas}. El plano \emph{cualitativo}
+(\Cref{sec:pet-resultados-cual}) lo complementa con una inspección
+visual directa de reconstrucciones concretas, donde se aprecian
+artefactos, texturas y diferencias estructurales que las métricas
+escalares promedian sobre miles de \textit{slices} y, por tanto,
+ocultan.
+
+\subsection{Resultados cuantitativos}
+\label{sec:pet-resultados-cuant}
+
 La \Cref{tab:pet-comparativa} recoge las métricas de los cuatro
 modelos y de la referencia de dosis baja sobre el conjunto de test
 completo (38 volúmenes, 24.472 \textit{slices}), evaluadas conforme
@@ -781,60 +782,271 @@ a la \Cref{sec:pet-metricas}.
         \begin{tabular}{@{}c@{}}Difusión\\supervisada\end{tabular} &
         \begin{tabular}{@{}c@{}}Difusión\\incond.\ (DPS)\end{tabular} \\
         \midrule
-        PSNR \textit{fg} (dB) $\uparrow$ & $24{,}56$ & \todo{} & \todo{} & $30{,}20$ & \todo{} \\
-        PSNR \textit{whole} (dB) $\uparrow$ & $28{,}31$ & \todo{} & \todo{} & $35{,}32$ & \todo{} \\
-        SSIM \textit{fg} $\uparrow$ & $0{,}9201$ & \todo{} & \todo{} & $0{,}9652$ & \todo{} \\
-        SSIM \textit{whole} $\uparrow$ & $0{,}7308$ & \todo{} & \todo{} & $0{,}9251$ & \todo{} \\
-        NRMSE \textit{fg} $\downarrow$ & $0{,}0701$ & \todo{} & \todo{} & $0{,}0364$ & \todo{} \\
-        NRMSE \textit{whole} $\downarrow$ & $0{,}0434$ & \todo{} & \todo{} & $0{,}0194$ & \todo{} \\
-        Error medio intensidad (\%) & $+1{,}77$ & \todo{} & \todo{} & $-4{,}75$ & \todo{} \\
-        Error máx.\ intensidad (\%) & $+50{,}10$ & \todo{} & \todo{} & $-18{,}47$ & \todo{} \\
+        PSNR \textit{fg} (dB) $\uparrow$ & $24{,}56$ & $30{,}20$ & $31{,}11$ & $\mathbf{31{,}58}$ & $28{,}52$ \\
+        PSNR \textit{whole} (dB) $\uparrow$ & $28{,}31$ & $35{,}32$ & $36{,}78$ & $\mathbf{37{,}12}$ & $33{,}74$ \\
+        SSIM \textit{fg} $\uparrow$ & $0{,}9201$ & $0{,}9652$ & $0{,}9714$ & $\mathbf{0{,}9729}$ & $0{,}9576$ \\
+        SSIM \textit{whole} $\uparrow$ & $0{,}7307$ & $0{,}9251$ & $0{,}9418$ & $\mathbf{0{,}9440}$ & $0{,}9178$ \\
+        NRMSE \textit{fg} $\downarrow$ & $0{,}0701$ & $0{,}0364$ & $0{,}0328$ & $\mathbf{0{,}0312}$ & $0{,}0466$ \\
+        NRMSE \textit{whole} $\downarrow$ & $0{,}0434$ & $0{,}0194$ & $0{,}0166$ & $\mathbf{0{,}0158}$ & $0{,}0239$ \\
+        Error medio intensidad (\%) & $+1{,}77$ & $-4{,}75$ & $\mathbf{-1{,}21}$ & $-1{,}85$ & $-8{,}11$ \\
+        Error máx.\ intensidad (\%) & $+50{,}10$ & $-18{,}47$ & $\mathbf{-6{,}39}$ & $-8{,}65$ & $-29{,}03$ \\
         \bottomrule
     \end{tabular}
     \caption{Comparativa sobre el conjunto de test (38 volúmenes,
     24.472 \textit{slices}). PSNR/SSIM/NRMSE en espacio normalizado
     (\textit{fg} = restringido a \textit{foreground};
     \textit{whole} = \textit{slice} completo); errores de intensidad
-    en espacio de cuentas. La columna de difusión supervisada
-    corresponde al \textit{checkpoint} de la época~100.}
+    en espacio de cuentas. En negrita, el mejor valor de cada fila.
+    La columna de difusión supervisada corresponde al
+    \textit{checkpoint} de la época~100; la de difusión incondicional,
+    al punto de operación $\omega = 3$ seleccionado sobre validación
+    (\Cref{tab:pet-omega}).}
     \label{tab:pet-comparativa}
 \end{table}
 
-\todo{Completar las columnas de RED-CNN, U-Net de regresión y
-difusión incondicional (DPS) cuando termine la recopilación de
-resultados de los últimos experimentos, e insertar las figuras
-representativas de cuatro paneles.}
+La lectura de la \Cref{tab:pet-comparativa} se organiza en cuatro
+observaciones.
 
-Los resultados ya disponibles permiten dos lecturas.
+\paragraph{El suelo de partida y los métodos discriminativos.}
+Todos los métodos aprendidos superan a la dosis baja sin procesar por
+un margen amplio. La línea base más pequeña, RED-CNN
+($\sim 1{,}8$~millones de parámetros), ya eleva el PSNR \textit{whole}
+de $28{,}31$ a $35{,}32$~dB ($+7{,}0$~dB) y el SSIM \textit{whole} de
+$0{,}73$ a $0{,}93$. La U-Net de regresión, con unas 60~veces más
+parámetros pero idéntico presupuesto de entrenamiento, añade otros
+$+1{,}5$~dB \textit{whole} ($36{,}78$) y reduce el NRMSE en las dos
+variantes. La capacidad arquitectónica ayuda, pero con rendimientos
+decrecientes: la barata RED-CNN ya captura la mayor parte de la
+ganancia alcanzable, y el salto de RED-CNN a la U-Net es pequeño en
+comparación con el que separa a ambas de la observación cruda.
 
-\paragraph{Difusión supervisada frente a la observación.}
-El Pipeline~A mejora a la dosis baja sin procesar en todas las
-métricas estructurales: $+7{,}0$~dB de PSNR sobre el \textit{slice}
-completo ($28{,}31 \to 35{,}32$), $+5{,}6$~dB en \textit{foreground},
-y un salto del SSIM \textit{whole} de $0{,}73$ a $0{,}93$. El NRMSE
-se reduce aproximadamente a la mitad en ambas variantes. En
-preservación de intensidad la lectura es más matizada: la dosis baja
-preserva casi exactamente la \emph{media} de intensidad por
-construcción (error $+1{,}8$\,\%) pero distorsiona gravemente el
-\emph{máximo} ($+50$\,\%, el ruido de Poisson infla los picos),
-mientras que la reconstrucción supervisada estabiliza el máximo
-($-18{,}5$\,\%) a costa de una ligera subestimación sistemática de
-la señal media ($-4{,}75$\,\%), coherente con la saturación suave
-esperable en las regiones más calientes
-(\Cref{sec:pet-preprocesado}).
+\paragraph{El paradigma generativo: difusión supervisada.}
+El Pipeline~A obtiene el \emph{mejor} valor en las seis métricas de
+calidad de imagen de toda la comparativa: PSNR \textit{whole}
+$37{,}12$~dB, SSIM \textit{whole} $0{,}9440$ y NRMSE \textit{whole}
+$0{,}0158$. Frente a la observación, esto supone $+8{,}8$~dB
+\textit{whole} y $+7{,}0$~dB \textit{fg}, con el NRMSE reducido a
+aproximadamente un tercio. Ahora bien, el margen sobre la mucho más
+simple U-Net de regresión es \emph{estrecho}
+($+0{,}34$~dB \textit{whole}, $+0{,}0022$ de SSIM \textit{whole}), y
+en preservación de intensidad la U-Net de regresión es incluso
+ligeramente superior (error medio $-1{,}21$\,\% frente a
+$-1{,}85$\,\%; máximo $-6{,}39$\,\% frente a $-8{,}65$\,\%). El
+paradigma generativo proporciona, por tanto, la mejor reconstrucción
+estructural, pero su ventaja sobre un regresor directo de la
+\emph{misma} arquitectura es modesta y se paga con un coste de
+inferencia órdenes de magnitud mayor (\Cref{sec:pet-costes}). En
+cuanto a la intensidad, la difusión supervisada se comporta como el
+resto de métodos reconstructivos: estabiliza el máximo que el ruido
+de Poisson de la dosis baja infla ($+50$\,\% $\to -8{,}65$\,\%) a
+costa de una ligera subestimación sistemática de la media
+($-1{,}85$\,\%), coherente con la saturación suave esperable en las
+regiones más calientes (\Cref{sec:pet-preprocesado}).
 
-\paragraph{Progresión del entrenamiento.}
-Entre los \textit{checkpoints} de las épocas 50 y 100 del
-Pipeline~A, las métricas de calidad de imagen mejoran de forma
-consistente (PSNR \textit{whole} $34{,}52 \to 35{,}32$~dB; SSIM
-\textit{whole} $0{,}9207 \to 0{,}9251$; NRMSE \textit{whole}
-$0{,}0213 \to 0{,}0194$), confirmando la observación del
-\Cref{cap:mariposas} de que la calidad sigue creciendo mucho después
-de que la pérdida de entrenamiento se estabilice. El error de
-intensidad media, en cambio, empeora ligeramente
-($-4{,}18 \to -4{,}75$\,\%), lo cual sugiere que el óptimo de las
-métricas estructurales y el de la fidelidad cuantitativa no
-coinciden necesariamente en la misma época.
+\paragraph{El prior no condicional con guiado (DPS).}
+El Pipeline~B —prior incondicional con guiado DPS, en su mejor punto
+de operación $\omega = 3$— queda con claridad por debajo de todos
+los métodos supervisados y discriminativos en las métricas
+estructurales: PSNR \textit{whole} $33{,}74$~dB, unos $3{,}4$~dB por
+debajo de la difusión supervisada e incluso $\sim 1{,}6$~dB por
+debajo de la pequeña RED-CNN, y la peor preservación de intensidad de
+los cuatro métodos reconstructivos (media $-8{,}11$\,\%, máximo
+$-29{,}03$\,\%). Este es el resultado central de la comparación entre
+los dos paradigmas de difusión: el guiado por muestreo posterior con
+operador identidad y varianza uniforme —el acoplamiento más simple y
+defendible en este contexto (\Cref{sec:pet-pipeline-b})— no alcanza
+al condicionamiento explícito. La ausencia de un modelo directo limpio
+$\mathbf{y} = A\mathbf{x}$ y la aproximación de la consistencia con
+la medición mediante un único paso de gradiente por paso DDIM dejan
+un error residual que el prior por sí solo no logra resolver.
+
+\paragraph{Sensibilidad a la escala de guiado.}
+La \Cref{tab:pet-omega} recoge el barrido de $\omega$ para el
+Pipeline~B. La calidad estructural crece de forma \emph{monótona} con
+la fuerza del guiado: de $\omega = 0{,}3$ a $\omega = 3$, el PSNR
+\textit{whole} asciende de $21{,}72$ a $33{,}74$~dB y el SSIM
+\textit{whole} de $0{,}80$ a $0{,}92$. La interpretación es intuitiva:
+con guiado débil domina el prior incondicional y se generan
+\textit{slices} verosímiles pero inconsistentes con el paciente
+concreto; un guiado más fuerte empuja la muestra hacia la medición
+real. La preservación de intensidad, en cambio, no es monótona y es
+mejor en torno a $\omega = 1$ (media $+1{,}68$\,\%, máximo
+$+6{,}03$\,\%): un guiado demasiado fuerte ($\omega = 3$) sobrecorrige
+y sesga la media a la baja ($-8{,}11$\,\%) y el máximo de forma
+acusada ($-29{,}03$\,\%). Existe, pues, una tensión entre fidelidad
+estructural y preservación cuantitativa de la intensidad que un único
+escalar $\omega$ no puede optimizar simultáneamente, lo que motiva la
+sustitución por una varianza $\sigma(\mathbf{y})$ derivada de la
+estadística de Poisson señalada como línea futura
+(\Cref{sec:lineas-futuras}). La columna de la
+\Cref{tab:pet-comparativa} adopta $\omega = 3$ por ser el mejor punto
+de operación estructural seleccionado sobre validación.
+
+\begin{table}[h!]
+    \centering
+    \small
+    \begin{tabular}{lccc}
+        \toprule
+        Métrica & $\omega = 0{,}3$ & $\omega = 1$ & $\omega = 3$ \\
+        \midrule
+        PSNR \textit{fg} (dB) $\uparrow$ & $16{,}11$ & $23{,}09$ & $\mathbf{28{,}52}$ \\
+        PSNR \textit{whole} (dB) $\uparrow$ & $21{,}72$ & $27{,}31$ & $\mathbf{33{,}74}$ \\
+        SSIM \textit{fg} $\uparrow$ & $0{,}8626$ & $0{,}9244$ & $\mathbf{0{,}9576}$ \\
+        SSIM \textit{whole} $\uparrow$ & $0{,}8035$ & $0{,}8860$ & $\mathbf{0{,}9178}$ \\
+        NRMSE \textit{fg} $\downarrow$ & $0{,}1817$ & $0{,}0791$ & $\mathbf{0{,}0466}$ \\
+        NRMSE \textit{whole} $\downarrow$ & $0{,}0937$ & $0{,}0406$ & $\mathbf{0{,}0239}$ \\
+        Error medio intensidad (\%) & $-4{,}11$ & $\mathbf{+1{,}68}$ & $-8{,}11$ \\
+        Error máx.\ intensidad (\%) & $\mathbf{+4{,}69}$ & $+6{,}03$ & $-29{,}03$ \\
+        \bottomrule
+    \end{tabular}
+    \caption{Barrido de la escala de guiado $\omega$ para el
+    Pipeline~B (prior incondicional con DPS) sobre el conjunto de
+    test. La calidad estructural mejora monótonamente con $\omega$,
+    mientras que la preservación de intensidad es óptima en torno a
+    $\omega = 1$. En negrita, el mejor valor de cada fila.}
+    \label{tab:pet-omega}
+\end{table}
+
+\paragraph{Síntesis.}
+El orden en calidad estructural es nítido: difusión supervisada
+$>$ U-Net de regresión $>$ RED-CNN $>$ DPS $>$ dosis baja. La
+aportación del paradigma generativo sobre un regresor de idéntica
+arquitectura es real pero pequeña en las métricas estructurales —y
+desfavorable en coste de inferencia—, mientras que la vía
+incondicional con DPS, bajo el acoplamiento más simple, no alcanza
+el nivel supervisado. Esta contraposición entre los dos paradigmas
+de difusión, y su lectura coste-beneficio, se retoma en las
+conclusiones (\Cref{cap:conclusiones}).
+
+\subsection{Resultados cualitativos}
+\label{sec:pet-resultados-cual}
+
+Las métricas de la \Cref{tab:pet-comparativa} ordenan los métodos,
+pero promedian sobre decenas de miles de \textit{slices} y no revelan
+\emph{cómo} reconstruye cada modelo: dónde aparecen artefactos, si la
+textura del ruido residual es plausible o si la captación en los
+órganos se preserva o se difumina. Esta sección complementa el
+análisis numérico con una inspección visual sobre el volumen de test
+\texttt{01122021\_1}, escogido por concentrar regiones anatómicas de
+interés diagnóstico. Se examinan dos regiones de interés (ROI) en las
+que se aprecia con claridad el comportamiento de cada método —un corte
+axial del cerebro y una proyección coronal del tronco con corazón,
+riñones y vejiga— y, a continuación, se analiza en detalle un artefacto
+de \textit{banding} propio del modelo no condicional. Todas las
+imágenes se presentan en espacio de cuentas, tras invertir la
+normalización \textit{asinh}, con una ventana de intensidad común por
+figura, de modo que la captación es directamente comparable entre
+paneles y con la dosis completa de referencia.
+
+\paragraph{ROI cerebral en un corte axial.}
+La \Cref{fig:pet-cual-slice} confronta, sobre un mismo corte axial a la
+altura del cerebro, la reconstrucción de los cuatro métodos frente a la
+dosis completa. El cerebro es una de las regiones más exigentes por su
+elevada captación y su textura interna fina. La U-Net de regresión y la
+difusión supervisada son las que más se aproximan a la referencia:
+preservan el contraste corteza-sustancia blanca y el detalle interno
+sin introducir grano espurio. La RED-CNN, de menor capacidad,
+reconstruye correctamente la silueta pero \emph{suaviza} en exceso la
+estructura interna, que aparece lavada y con menos contraste. La
+difusión no condicional recupera la forma global y un nivel de detalle
+razonable, pero con una textura más granulada y ligeramente
+\emph{alucinada}: el \textit{prior} rellena estructura plausible pero
+no necesariamente fiel al paciente, coherente con su menor PSNR y SSIM.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{img/pet_reconstruction/cual_slice_axial_555.png}
+    \caption{ROI cerebral sobre el corte axial número~555 del volumen
+    de test \texttt{01122021\_1}. De izquierda a derecha: dosis completa
+    (referencia), U-Net de regresión, difusión supervisada, RED-CNN y
+    difusión no condicional (DPS). La U-Net y la difusión supervisada
+    conservan mejor el contraste y el detalle interno; la RED-CNN
+    suaviza la estructura y la difusión no condicional introduce una
+    textura más granulada. Escala de intensidad común a todos los
+    paneles.}
+    \label{fig:pet-cual-slice}
+\end{figure}
+
+\paragraph{ROI del tronco en proyección coronal (MIP).}
+La proyección de máxima intensidad (MIP) es la visualización estándar
+en PET de cuerpo entero: proyecta a lo largo de una dirección el valor
+máximo de cada rayo, condensando el volumen 3D en una imagen que
+resalta los focos de captación. A diferencia del corte aislado, integra
+la coherencia del método a lo largo del eje axial. La
+\Cref{fig:pet-cual-mip} muestra una MIP coronal restringida al tronco
+—corazón, riñones, uréteres y vejiga—. De nuevo, la U-Net y la difusión
+supervisada reproducen con fidelidad las estructuras vasculares y el
+contraste de los órganos, mientras que la RED-CNN los preserva con un
+ligero suavizado. El comportamiento de la difusión no condicional es,
+en cambio, marcadamente distinto: además de lavar el contraste, exhibe
+un patrón de \emph{bandas horizontales} (\textit{banding}) que recorre
+toda la proyección. Este artefacto es la manifestación visual de la
+limitación estructural del Pipeline~B: al procesar el volumen
+\textit{slice} a \textit{slice} de forma independiente y con un guiado
+de medición insuficiente, las pequeñas inconsistencias de intensidad
+entre cortes contiguos, invisibles en el corte aislado, se acumulan a
+lo largo del eje axial y afloran como rayas en la MIP.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{img/pet_reconstruction/cual_mip_roi_coronal.png}
+    \caption{ROI del tronco en proyección de máxima intensidad (MIP)
+    coronal del volumen de test \texttt{01122021\_1}. De izquierda a
+    derecha: dosis completa (referencia), U-Net de regresión, difusión
+    supervisada, RED-CNN y difusión no condicional (DPS, $\omega = 1$).
+    La difusión no condicional presenta un patrón de \textit{banding}
+    horizontal y un contraste lavado, ausentes en el resto de métodos.
+    Escala de intensidad común a todos los paneles.}
+    \label{fig:pet-cual-mip}
+\end{figure}
+
+\paragraph{El \textit{banding} y la escala de guiado $\omega$.}
+Para caracterizar este artefacto, la \Cref{fig:pet-cual-banding}
+reconstruye la MIP coronal de cuerpo completo del mismo volumen con el
+modelo no condicional para tres valores crecientes de la escala de
+guiado, $\omega \in \{1, 3, 5\}$. El efecto es inequívoco: con
+$\omega = 1$ el \textit{banding} es severo y la imagen aparece
+fragmentada en franjas; al aumentar $\omega$ las bandas se atenúan de
+forma progresiva hasta casi desaparecer en $\omega = 5$, donde el
+cuerpo se reconstruye de forma continua y compacta. La explicación
+conecta directamente con el carácter monótono observado en la
+\Cref{tab:pet-omega}: un guiado más fuerte ata cada \textit{slice} con
+mayor firmeza a su propia medición, lo que restaura la consistencia de
+intensidad entre cortes contiguos y elimina el origen del artefacto.
+Ahora bien, esta supresión no es gratuita: como ya se vio, un $\omega$
+demasiado alto sobrecorrige y degrada la preservación de intensidad
+(\Cref{tab:pet-omega}), de modo que el \textit{banding} ilustra
+visualmente la misma tensión estructura-intensidad que el barrido
+cuantitativo cifró en escalares.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{img/pet_reconstruction/cual_mip_banding_omega.png}
+    \caption{Efecto de la escala de guiado $\omega$ sobre el
+    \textit{banding} del modelo no condicional. MIP coronal de cuerpo
+    completo del volumen de test \texttt{01122021\_1}: dosis completa
+    (referencia) y reconstrucciones con $\omega = 1$, $\omega = 3$ y
+    $\omega = 5$. El \textit{banding} horizontal, severo con guiado
+    débil, se atenúa de forma monótona al aumentar $\omega$ y casi
+    desaparece en $\omega = 5$. Escala de intensidad común a todos los
+    paneles.}
+    \label{fig:pet-cual-banding}
+\end{figure}
+
+\paragraph{Síntesis cualitativa.}
+La inspección visual confirma y matiza el orden cuantitativo de la
+\Cref{tab:pet-comparativa}. La difusión supervisada y la U-Net de
+regresión son indistinguibles a simple vista de la dosis completa en
+ambas ROI; la RED-CNN reconstruye correctamente la anatomía pero con un
+suavizado perceptible, y la difusión no condicional, más allá de sus
+métricas inferiores, presenta un artefacto de \textit{banding}
+estructurado e intrínseco al procesamiento 2D independiente con guiado
+débil. La evidencia visual respalda así la lectura coste-beneficio de
+la \Cref{sec:pet-resultados-cuant}: el guiado por muestreo posterior,
+bajo el acoplamiento más simple, no solo queda por debajo en las
+métricas sino que arrastra un artefacto cualitativo característico que
+solo un guiado fuerte —a costa de la fidelidad de intensidad— logra
+mitigar.
 
 % ---------------------------------------------------------------------
 \section{Costes}
@@ -912,26 +1124,3 @@ pequeños según se necesitaba— y absorbió además las pruebas
 \texttt{-{}-smoke}, la depuración interactiva, algún relanzamiento
 tras corregir errores y el inevitable tiempo de pod ocioso antes de
 detener cada instancia, además de un margen que quedó sin consumir.
-
-La comparación con la estimación inicial es la lección económica del
-capítulo. Ejecutar los dos \textit{pipelines} de difusión en el
-portátil se había estimado en torno a 150~horas de cómputo acoplado
-al ordenador personal (\Cref{sec:pet-entorno-cloud}), inviable en la
-práctica por el riesgo operativo de mantener la máquina dedicada
-durante más de una semana. Migrar a GPU dedicada no solo eliminó ese
-acoplamiento, sino que redujo el tiempo de pared a unas pocas
-decenas de horas por modelo —y a la mitad cuando se entrenaron dos a
-la vez— por un desembolso monetario modesto, plenamente dentro del
-presupuesto de un Trabajo de Fin de Máster. El cómputo dejó de ser,
-así, el factor limitante del alcance experimental.
-
-Más allá del entrenamiento, conviene registrar el coste de
-\emph{inferencia}: reconstruir un volumen completo con DDIM-50 en
-local (MacBook Pro M4 Pro, \textit{batch} de inferencia 8) requiere
-aproximadamente una hora por volumen, lo que sitúa la inferencia de
-difusión lejos del tiempo real y motiva la discusión sobre el
-despliegue clínico de la \Cref{sec:limitaciones}. Las líneas base
-discriminativas, con una única pasada hacia delante por corte, son
-órdenes de magnitud más rápidas en inferencia; este contraste forma
-parte de la comparación de paradigmas y se retoma en las
-conclusiones.
